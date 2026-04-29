@@ -3,23 +3,27 @@ import type { ParsedHierarchyRow, RawSheetRow } from "./types";
 /**
  * Drops fully empty rows and builds ParsedHierarchyRow for each remaining line.
  */
-export function extractHierarchyRows(matrix: string[][]): {
+export function extractHierarchyRows(
+  matrix: string[][],
+  options: { checkColumnIndex?: number | null } = {},
+): {
   rows: ParsedHierarchyRow[];
   warnings: string[];
 } {
   const warnings: string[] = [];
   const rows: ParsedHierarchyRow[] = [];
+  const checkColumnIndex = options.checkColumnIndex ?? null;
 
   matrix.forEach((rawRow, sheetRowIndex) => {
     if (rawRow.every((c) => c === "")) {
-      warnings.push(
-        `skipped empty row (sheet row ${sheetRowIndex + 1})`,
-      );
       return;
     }
 
     let firstIdx = -1;
     for (let i = 0; i < rawRow.length; i++) {
+      if (i === checkColumnIndex) {
+        continue;
+      }
       if (rawRow[i] !== "") {
         firstIdx = i;
         break;
@@ -27,17 +31,21 @@ export function extractHierarchyRows(matrix: string[][]): {
     }
 
     if (firstIdx < 0) {
-      warnings.push(
-        `skipped empty row (sheet row ${sheetRowIndex + 1})`,
-      );
       return;
     }
 
     const label = rawRow[firstIdx]!;
+    const level =
+      checkColumnIndex !== null && checkColumnIndex < firstIdx
+        ? firstIdx - 1
+        : firstIdx;
     let descriptionCandidate = "";
     let bestLen = 0;
 
     for (let c = firstIdx + 1; c < rawRow.length; c++) {
+      if (c === checkColumnIndex) {
+        continue;
+      }
       const cell = rawRow[c]!;
       if (cell.length > bestLen) {
         descriptionCandidate = cell;
@@ -49,7 +57,7 @@ export function extractHierarchyRows(matrix: string[][]): {
 
     rows.push({
       sheetRowIndex,
-      level: firstIdx,
+      level,
       label,
       descriptionCandidate,
       rawRow: rowCopy,

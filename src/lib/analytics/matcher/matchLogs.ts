@@ -7,6 +7,9 @@ import {
 import { normalizeValue } from "./normalize";
 import { extractAnalyticsPayload, validateExtractedPayload } from "./parseLogs";
 
+const CLICK_LIKE_DUPLICATE_WINDOW_MS = 250;
+const SOURCE_ORDER_DUPLICATE_WINDOW_EVENTS = 1;
+
 function specEventPath(row: AnalyticsSpecRow): string {
   return String(row.cells.eventPath ?? row.hierarchy.join("."));
 }
@@ -256,6 +259,170 @@ function nextLogId(): string {
   return `log-${Date.now()}-${logIdSeq}`;
 }
 
+type TimestampSource = "parsed" | "source-order";
+
+type LogTimestamp = {
+  value: number;
+  source: TimestampSource;
+};
+
+type LastDuplicateCandidate = {
+  timestamp: number;
+  timestampSource: TimestampSource;
+  sequenceIndex: number;
+};
+
+function parseFractionalMs(value: string | undefined): number {
+  if (!value) return 0;
+  return Number(value.padEnd(3, "0").slice(0, 3));
+}
+
+function parseRawLogTimestamp(raw: string, baseTime: number): number | null {
+  const normalizedRaw = raw.replace(",", ".");
+  const isoMatch = normalizedRaw.match(
+    /\b(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:?\d{2})?)\b/,
+  );
+  if (isoMatch?.[1]) {
+    const parsed = Date.parse(isoMatch[1]);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  const androidMatch = normalizedRaw.match(
+    /(?:^|\s)(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(?:\s|$)/,
+  );
+  if (androidMatch) {
+    const base = new Date(baseTime);
+    return new Date(
+      base.getFullYear(),
+      Number(androidMatch[1]) - 1,
+      Number(androidMatch[2]),
+      Number(androidMatch[3]),
+      Number(androidMatch[4]),
+      Number(androidMatch[5]),
+      parseFractionalMs(androidMatch[6]),
+    ).getTime();
+  }
+
+  const timeOnlyMatch = normalizedRaw.match(
+    /(?:^|\s)(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(?:\s|$)/,
+  );
+  if (timeOnlyMatch) {
+    const base = new Date(baseTime);
+    return new Date(
+      base.getFullYear(),
+      base.getMonth(),
+      base.getDate(),
+      Number(timeOnlyMatch[1]),
+      Number(timeOnlyMatch[2]),
+      Number(timeOnlyMatch[3]),
+      parseFractionalMs(timeOnlyMatch[4]),
+    ).getTime();
+  }
+
+  return null;
+}
+
+function resolveLogTimestamp(
+  raw: string,
+  fallbackTimestamp: number,
+  baseTime: number,
+): LogTimestamp {
+  const parsed = parseRawLogTimestamp(raw, baseTime);
+  if (parsed !== null) {
+    return { value: parsed, source: "parsed" };
+  }
+
+  return { value: fallbackTimestamp, source: "source-order" };
+}
+
+function duplicateFingerprint(
+  result: MatchPayloadResult,
+  extracted: string,
+): string | null {
+  if (!result.eventPath) {
+    return null;
+  }
+
+  return [
+    normalizeValue(result.eventPath),
+    normalizeValue(result.value),
+    normalizeValue(extracted),
+  ].join("\0");
+}
+
+function duplicateEventSignal(
+  result: MatchPayloadResult,
+  extracted: string,
+): string {
+  return [result.eventPath ?? "", result.value ?? "", extracted]
+    .map((part) => normalizeValue(part).replace(/[^a-z0-9]+/g, " "))
+    .join(" ")
+    .trim();
+}
+
+function signalHasAny(signal: string, terms: string[]): boolean {
+  const tokens = new Set(signal.split(/\s+/).filter(Boolean));
+  return terms.some((term) =>
+    term.includes(" ") ? signal.includes(term) : tokens.has(term),
+  );
+}
+
+function isHardDuplicateCandidate(
+  result: MatchPayloadResult,
+  extracted: string,
+): boolean {
+  const signal = duplicateEventSignal(result, extracted);
+  const excludedTokens = [
+    "impression",
+    "view",
+    "show",
+    "screen",
+    "open",
+    "opened",
+    "claim",
+    "purchase attempt",
+    "purchaseattempt",
+    "ad",
+    "ads",
+    "service",
+    "internal",
+    "sdk",
+    "adservice",
+  ];
+
+  if (signalHasAny(signal, excludedTokens)) {
+    return false;
+  }
+
+  const clickLikeTokens = [
+    "click",
+    "tap",
+    "tapped",
+    "clicked",
+    "confirm",
+    "button",
+    "press",
+    "submit",
+    "accept",
+  ];
+
+  return signalHasAny(signal, clickLikeTokens);
+}
+
+function duplicateReason(
+  deltaMs: number,
+  currentSource: TimestampSource,
+  previousSource: TimestampSource,
+): string {
+  if (currentSource === "parsed" && previousSource === "parsed") {
+    return `Duplicate within ${deltaMs} ms (same event fingerprint)`;
+  }
+
+  return "Same event fingerprint repeated in short source-order window";
+}
+
 /**
  * Parses multi-line input, matches each payload, applies duplicate detection and row updates.
  */
@@ -271,8 +438,12 @@ export function matchLogLinesAgainstSpec(
   const idx = buildMatcherIndexes(rows);
   const lines = rawText.split(/\r?\n/);
   const logs: ParsedLogEntry[] = [];
-  const seenPassed = new Set<string>();
+  const lastDuplicateCandidateByFingerprint = new Map<
+    string,
+    LastDuplicateCandidate
+  >();
   const baseTime = Date.now();
+  let eventSequence = 0;
 
   lines.forEach((raw, lineIndex) => {
     const trimmed = raw.trim();
@@ -281,7 +452,9 @@ export function matchLogLinesAgainstSpec(
     const extracted = extractAnalyticsPayload(raw);
     if (extracted === null) return;
 
-    const ts = baseTime + lineIndex;
+    eventSequence += 1;
+    const sequenceIndex = eventSequence;
+    const timestamp = resolveLogTimestamp(raw, baseTime + lineIndex, baseTime);
     const payloadCheck = validateExtractedPayload(extracted);
     if (!payloadCheck.valid) {
       logs.push({
@@ -290,7 +463,7 @@ export function matchLogLinesAgainstSpec(
         extracted,
         eventPath: null,
         value: null,
-        timestamp: ts,
+        timestamp: timestamp.value,
         matchType: "unknown",
         matchedRowId: null,
         reason: payloadCheck.reason,
@@ -304,12 +477,50 @@ export function matchLogLinesAgainstSpec(
     let reason = m.reason;
 
     if (matchType === "passed" && m.matchedRowId) {
-      const dupKey = `${m.matchedRowId}::${normalizeValue(extracted)}`;
-      if (seenPassed.has(dupKey)) {
-        matchType = "duplicate";
-        reason = "Duplicate log (same row + payload as earlier line)";
-      } else {
-        seenPassed.add(dupKey);
+      const fingerprint = duplicateFingerprint(m, extracted);
+      const isDuplicateCandidate = isHardDuplicateCandidate(m, extracted);
+      if (fingerprint && isDuplicateCandidate) {
+        const windowMs = CLICK_LIKE_DUPLICATE_WINDOW_MS;
+        const previous =
+          lastDuplicateCandidateByFingerprint.get(fingerprint);
+        const isImmediateBurst =
+          previous !== undefined &&
+          sequenceIndex - previous.sequenceIndex <=
+            SOURCE_ORDER_DUPLICATE_WINDOW_EVENTS;
+        if (previous && isImmediateBurst) {
+          if (
+            timestamp.source === "parsed" &&
+            previous.timestampSource === "parsed"
+          ) {
+            const deltaMs = timestamp.value - previous.timestamp;
+            if (deltaMs >= 0 && deltaMs < windowMs) {
+              matchType = "duplicate";
+              reason = duplicateReason(
+                deltaMs,
+                timestamp.source,
+                previous.timestampSource,
+              );
+            }
+          } else {
+            const sequenceDelta = sequenceIndex - previous.sequenceIndex;
+            if (
+              sequenceDelta > 0 &&
+              sequenceDelta <= SOURCE_ORDER_DUPLICATE_WINDOW_EVENTS
+            ) {
+              matchType = "duplicate";
+              reason = duplicateReason(
+                0,
+                timestamp.source,
+                previous.timestampSource,
+              );
+            }
+          }
+        }
+        lastDuplicateCandidateByFingerprint.set(fingerprint, {
+          timestamp: timestamp.value,
+          timestampSource: timestamp.source,
+          sequenceIndex,
+        });
       }
     }
 
@@ -319,7 +530,7 @@ export function matchLogLinesAgainstSpec(
       extracted,
       eventPath: m.eventPath,
       value: m.value,
-      timestamp: ts,
+      timestamp: timestamp.value,
       matchType,
       matchedRowId: m.matchedRowId,
       reason,

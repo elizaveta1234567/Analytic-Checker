@@ -52,7 +52,7 @@ export function MissingEventsBlock(
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter by path, value, description…"
+            placeholder="Filter by path, value, description..."
             className="mt-2 w-full rounded-lg border border-[#2a2f3a] bg-[#171923] px-2.5 py-1.5 text-xs text-[#f3f4f6] placeholder:text-[#6b7280] focus:border-violet-500/40 focus:outline-none focus:ring-1 focus:ring-violet-500/25"
           />
         ) : null}

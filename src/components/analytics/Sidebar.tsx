@@ -1,12 +1,6 @@
 "use client";
 
 import { useRef } from "react";
-import {
-  MOCK_ACTIVE_FILTER_ID,
-  MOCK_ACTIVE_SPEC_ID,
-  MOCK_FILTER_ITEMS,
-  MOCK_SPEC_ITEMS,
-} from "./mock-ui";
 
 const sectionTitle =
   "mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#9ca3af]";
@@ -20,12 +14,29 @@ const listItemIdle =
 const listItemActive =
   "border-violet-500/30 bg-violet-500/10 text-violet-100 shadow-[inset_0_0_0_1px_rgba(139,92,246,0.15)]";
 
+export type SidebarFilter =
+  | "all"
+  | "passed"
+  | "duplicate"
+  | "unknown"
+  | "not_checked";
+
+const filterItems: Array<{ id: SidebarFilter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "passed", label: "Passed" },
+  { id: "duplicate", label: "Duplicate" },
+  { id: "unknown", label: "Unknown" },
+  { id: "not_checked", label: "Not checked" },
+];
+
 export type SidebarProps = {
   onSpecFile: (file: File) => void;
   isImporting: boolean;
   importError: string | null;
   importWarnings: string[];
   activeFileName: string | null;
+  activeFilter: SidebarFilter;
+  onFilterChange: (filter: SidebarFilter) => void;
 };
 
 export function Sidebar({
@@ -34,6 +45,8 @@ export function Sidebar({
   importError,
   importWarnings,
   activeFileName,
+  activeFilter,
+  onFilterChange,
 }: SidebarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -64,15 +77,25 @@ export function Sidebar({
           onClick={() => inputRef.current?.click()}
           className="w-full rounded-lg border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-2.5 text-[13px] font-medium text-[#f3f4f6] transition hover:border-violet-500/40 hover:bg-[#232736] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isImporting ? "Reading…" : "Upload spec (.xlsx / .csv)"}
+          {isImporting ? "Reading..." : "Upload spec (.xlsx / .csv)"}
         </button>
         {activeFileName ? (
-          <p
-            className="truncate text-xs text-[#9ca3af]"
+          <div
+            className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.08] p-3 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.08)]"
             title={activeFileName}
           >
-            {activeFileName}
-          </p>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-200/90">
+                Loaded spec
+              </p>
+              <span className="rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-100">
+                READY
+              </span>
+            </div>
+            <p className="truncate text-[13px] font-semibold leading-snug text-[#f3f4f6]">
+              {activeFileName}
+            </p>
+          </div>
         ) : null}
         {importError ? (
           <p className="text-xs text-red-400">{importError}</p>
@@ -98,33 +121,15 @@ export function Sidebar({
 
       <nav className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 py-4">
         <div>
-          <h2 className={sectionTitle}>Specs</h2>
-          <ul className="flex flex-col gap-0.5">
-            {MOCK_SPEC_ITEMS.map((item) => {
-              const active = item.id === MOCK_ACTIVE_SPEC_ID;
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    className={`${listItemBase} ${active ? listItemActive : listItemIdle}`}
-                  >
-                    {item.label}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-
-        <div>
           <h2 className={sectionTitle}>Filters</h2>
           <ul className="flex flex-col gap-0.5">
-            {MOCK_FILTER_ITEMS.map((item) => {
-              const active = item.id === MOCK_ACTIVE_FILTER_ID;
+            {filterItems.map((item) => {
+              const active = item.id === activeFilter;
               return (
                 <li key={item.id}>
                   <button
                     type="button"
+                    onClick={() => onFilterChange(item.id)}
                     className={`${listItemBase} ${active ? listItemActive : listItemIdle}`}
                   >
                     {item.label}

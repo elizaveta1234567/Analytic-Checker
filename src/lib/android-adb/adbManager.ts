@@ -11,11 +11,15 @@ if (!globalAny.__adbManager) {
   let logcatReadline: readline.Interface | null = null;
   let startInFlight = false;
 
-  function getPidOf(): Promise<string> {
+  function getPidOf(effectivePackageName: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = spawn(adbPath, ["shell", "pidof", "-s", packageName], {
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      const child = spawn(
+        adbPath,
+        ["shell", "pidof", "-s", effectivePackageName],
+        {
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
       let stdout = "";
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
@@ -43,13 +47,14 @@ if (!globalAny.__adbManager) {
   }
 
   globalAny.__adbManager = {
-    async start(): Promise<void> {
+    async start(packageNameOverride?: string): Promise<void> {
       if (logcatChild !== null || startInFlight) {
         return;
       }
       startInFlight = true;
       try {
-        const pid = await getPidOf();
+        const effectivePackageName = packageNameOverride?.trim() || packageName;
+        const pid = await getPidOf(effectivePackageName);
         if (!pid) {
           throw new Error("App process not found");
         }

@@ -1,5 +1,6 @@
 import { StatusDot } from "./StatusDot";
 import type { TableRowModel } from "./specRowDisplay";
+import { type ReactNode, useEffect, useRef } from "react";
 
 const thClass =
   "px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-[#9ca3af]";
@@ -8,19 +9,54 @@ export type AnalyticsTableProps = {
   rows: TableRowModel[];
   selectedRowId: string | null;
   onSelectRow: (id: string) => void;
+  highlightedRowIds?: string[];
+  scrollToTopSignal?: number;
+  eventGroupTabs?: ReactNode;
   /** True when a file was loaded but produced zero spec rows. */
   isEmptyImport: boolean;
   /** When rows come from a real file import (vs mock preview). */
   isImported: boolean;
 };
 
+function translateStatusLabel(label: string): string {
+  switch (label.toLowerCase()) {
+    case "passed":
+    case "matched":
+      return "Passed";
+    case "partial":
+      return "Partial";
+    case "duplicate":
+      return "Duplicate";
+    case "unknown":
+      return "Unknown";
+    case "not checked":
+    case "not_checked":
+      return "Not checked";
+    default:
+      return label;
+  }
+}
+
 export function AnalyticsTable({
   rows,
   selectedRowId,
   onSelectRow,
+  highlightedRowIds = [],
+  scrollToTopSignal = 0,
+  eventGroupTabs,
   isEmptyImport,
   isImported,
 }: AnalyticsTableProps) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const highlightedRowIdSet = new Set(highlightedRowIds);
+
+  useEffect(() => {
+    if (scrollToTopSignal === 0) {
+      return;
+    }
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [scrollToTopSignal]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#2a2f3a] bg-[#1c1f2a] shadow-lg shadow-black/25">
       <div className="shrink-0 border-b border-[#2a2f3a] px-4 py-3">
@@ -41,9 +77,10 @@ export function AnalyticsTable({
             Upload a spec file in the sidebar to replace this sample data.
           </p>
         )}
+        {eventGroupTabs ? <div className="mt-3">{eventGroupTabs}</div> : null}
       </div>
 
-      <div className="h-full min-h-0 flex-1 overflow-auto">
+      <div ref={scrollRef} className="h-full min-h-0 flex-1 overflow-auto">
         {isEmptyImport ? (
           <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
             <p className="text-sm text-[#e5e7eb]">No rows parsed</p>
@@ -73,6 +110,7 @@ export function AnalyticsTable({
             <tbody>
               {rows.map((row) => {
                 const selected = row.id === selectedRowId;
+                const highlighted = highlightedRowIdSet.has(row.id);
                 return (
                   <tr
                     key={row.id}
@@ -86,17 +124,19 @@ export function AnalyticsTable({
                       }
                     }}
                     className={[
-                      "cursor-pointer border-b border-[#2a2f3a]/80 transition-colors",
-                      selected
+                      "cursor-pointer border-b transition-colors duration-700",
+                      highlighted
+                        ? "border-emerald-400/45 bg-emerald-500/[0.12] ring-1 ring-inset ring-emerald-400/20"
+                        : selected
                         ? "bg-violet-500/10 ring-1 ring-inset ring-violet-500/25"
-                        : "hover:bg-[#232736]/90",
+                        : "border-[#2a2f3a]/80 hover:bg-[#232736]/90",
                     ].join(" ")}
                   >
                     <td className="px-3 py-2.5 pl-4 align-middle">
                       <span className="inline-flex items-center gap-2">
                         <StatusDot variant={row.dotStatus} />
-                        <span className="capitalize text-[#d1d5db]">
-                          {row.statusLabel}
+                        <span className="text-[#d1d5db]">
+                          {translateStatusLabel(row.statusLabel)}
                         </span>
                       </span>
                     </td>

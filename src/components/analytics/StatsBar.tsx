@@ -14,6 +14,23 @@ export type StatsBarProps = {
   counts?: StatsBarCounts | null;
 };
 
+function translateStatLabel(label: string): string {
+  switch (label.toLowerCase()) {
+    case "passed":
+      return "Passed";
+    case "duplicates":
+      return "Duplicates";
+    case "unknown":
+      return "Unknown";
+    case "partial":
+      return "Partial";
+    case "not checked":
+      return "Not checked";
+    default:
+      return label;
+  }
+}
+
 export function StatsBar({ counts }: StatsBarProps) {
   const cards =
     counts === null || counts === undefined
@@ -55,7 +72,7 @@ export function StatsBar({ counts }: StatsBarProps) {
           <div className="flex items-center gap-2">
             <StatusDot variant={card.variant} />
             <span className="text-[11px] font-medium uppercase tracking-wide text-[#9ca3af]">
-              {card.label}
+              {translateStatLabel(card.label)}
             </span>
           </div>
           <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-[#f3f4f6]">
