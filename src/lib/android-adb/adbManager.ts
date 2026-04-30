@@ -1,10 +1,134 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 import * as readline from "readline";
-import { adbPath, packageName } from "./adbConfig";
+import { packageName } from "./adbConfig";
 import { normalizeAdbLogLine } from "./logParser";
+import { isAdbPathResolutionError, resolveAdbPath } from "./resolveAdbPath";
 import { streamState } from "./streamState";
 
 const globalAny = globalThis as any;
+
+const foregroundPackageDetectionFailedMessage =
+  "Could not detect foreground Android package. Make sure the app is open on device.";
+
+type ForegroundPackageDetectionCommand = {
+  label: string;
+  args: readonly string[];
+  parseAllLines?: boolean;
+};
+
+const foregroundPackageDetectionCommands: ForegroundPackageDetectionCommand[] = [
+  {
+    label: "adb shell cmd activity get-foreground-activity",
+    args: ["shell", "cmd", "activity", "get-foreground-activity"],
+    parseAllLines: true,
+  },
+  {
+    label: "adb shell dumpsys window",
+    args: ["shell", "dumpsys", "window"],
+  },
+  {
+    label: "adb shell dumpsys activity activities",
+    args: ["shell", "dumpsys", "activity", "activities"],
+  },
+  {
+    label: "adb shell dumpsys activity top",
+    args: ["shell", "dumpsys", "activity", "top"],
+  },
+];
+
+function isAdbDeviceError(message: string): boolean {
+  return /no devices?\/emulators found|\bno devices?\b|\bdevice offline\b|\bdevice ['"][^'"]+['"] not found\b|\bdevice not found\b|\bunauthorized\b|\bmore than one device\b|\bfailed to get feature set\b|\binsufficient permissions\b|\bno permissions\b/i.test(
+    message,
+  );
+}
+
+function runAdbCommand(args: readonly string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(resolveAdbPath(), [...args], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `ADB command failed: ${code}`));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+function parseForegroundPackageName(
+  adbOutput: string,
+  parseAllLines = false,
+): string | null {
+  const packagePattern = /\b([a-zA-Z][\w]*(?:\.[\w]+)+)\/[^\s)}]+/;
+  const foregroundMarkers = [
+    "mCurrentFocus",
+    "topResumedActivity",
+    "mResumedActivity",
+    "ResumedActivity",
+    "mFocusedApp",
+    "mFocusedActivity",
+    "ACTIVITY ",
+  ];
+
+  for (const line of adbOutput.split(/\r?\n/)) {
+    if (
+      !parseAllLines &&
+      !foregroundMarkers.some((marker) => line.includes(marker))
+    ) {
+      continue;
+    }
+
+    const cmpMatch = line.match(
+      /\bcmp=([a-zA-Z][\w]*(?:\.[\w]+)+)\/[^\s}]+/,
+    );
+    if (cmpMatch?.[1]) {
+      return cmpMatch[1];
+    }
+
+    const match = line.match(packagePattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
+async function detectForegroundPackageName(): Promise<string> {
+  for (const command of foregroundPackageDetectionCommands) {
+    try {
+      const output = await runAdbCommand(command.args);
+      const foregroundPackageName = parseForegroundPackageName(
+        output,
+        command.parseAllLines ?? false,
+      );
+      if (foregroundPackageName) {
+        return foregroundPackageName;
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (isAdbPathResolutionError(message) || isAdbDeviceError(message)) {
+        throw new Error(message);
+      }
+      console.warn(`[adbManager] ${command.label} failed`, e);
+    }
+  }
+
+  throw new Error(foregroundPackageDetectionFailedMessage);
+}
 
 if (!globalAny.__adbManager) {
   let logcatChild: ChildProcessWithoutNullStreams | null = null;
@@ -14,7 +138,7 @@ if (!globalAny.__adbManager) {
   function getPidOf(effectivePackageName: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const child = spawn(
-        adbPath,
+        resolveAdbPath(),
         ["shell", "pidof", "-s", effectivePackageName],
         {
           stdio: ["ignore", "pipe", "pipe"],
@@ -47,6 +171,8 @@ if (!globalAny.__adbManager) {
   }
 
   globalAny.__adbManager = {
+    detectForegroundPackageName,
+
     async start(packageNameOverride?: string): Promise<void> {
       if (logcatChild !== null || startInFlight) {
         return;
@@ -62,7 +188,7 @@ if (!globalAny.__adbManager) {
         console.log("[adbManager] pid:", pid);
         console.log("[adbManager] starting logcat for pid", pid);
 
-        const child = spawn(adbPath, ["logcat", `--pid=${pid}`], {
+        const child = spawn(resolveAdbPath(), ["logcat", `--pid=${pid}`], {
           stdio: ["ignore", "pipe", "pipe"],
         });
 
@@ -125,6 +251,9 @@ if (!globalAny.__adbManager) {
       streamState.unsubscribe(listener);
     },
   };
+} else {
+  globalAny.__adbManager.detectForegroundPackageName =
+    detectForegroundPackageName;
 }
 
 export const adbManager = globalAny.__adbManager;

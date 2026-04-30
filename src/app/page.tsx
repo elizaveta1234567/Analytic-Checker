@@ -14,6 +14,7 @@ import {
   type ParsedLogEntry,
   type ParsedSpecResult,
 } from "@/lib/analytics";
+import { exportCheckedWorkbook } from "@/lib/analytics/import/exportCheckedWorkbook";
 import type { AnalyticsSpecRow } from "@/lib/analytics/types";
 import {
   AnalyticsTable,
@@ -25,16 +26,8 @@ import {
 import type { StatsBarCounts } from "@/components/analytics/StatsBar";
 import { StatusDot } from "@/components/analytics/StatusDot";
 import type { StatusDotVariant } from "@/components/analytics/StatusDot";
-import {
-  MOCK_RECENT_LOG_ITEMS,
-  MOCK_SELECTED_ROW_ID,
-  MOCK_TABLE_ROWS,
-} from "@/components/analytics/mock-ui";
 import type { SidebarFilter } from "@/components/analytics/Sidebar";
-import {
-  mockToTableRowModel,
-  specToTableRowModel,
-} from "@/components/analytics/specRowDisplay";
+import { specToTableRowModel } from "@/components/analytics/specRowDisplay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type AndroidLiveStatus =
@@ -43,7 +36,7 @@ type AndroidLiveStatus =
   | "live"
   | "error";
 
-type PlatformMode = "android" | "ios";
+type PlatformMode = "android" | "ios" | "unity";
 
 type EventGroupTabId =
   | "all"
@@ -53,13 +46,16 @@ type EventGroupTabId =
   | "tracking_purchase"
   | "funnel";
 
-const defaultAndroidPackageName = "mother.simulator.baby.care.games";
 const androidPackageNamesStorageKey = "analytics-checker.androidPackageNames";
+const uiLanguageStorageKey = "analytics-checker.uiLanguage";
 const liveHardDuplicateWindowMs = 250;
+
+type UiLanguage = "en" | "ru";
 
 const platformItems: Array<{ id: PlatformMode; label: string }> = [
   { id: "android", label: "Android" },
   { id: "ios", label: "iOS" },
+  { id: "unity", label: "Unity" },
 ];
 
 function AndroidPlatformIcon() {
@@ -111,11 +107,42 @@ function ApplePlatformIcon() {
   );
 }
 
+function UnityPlatformIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-6 w-6"
+      viewBox="0 0 24 24"
+      fill="none"
+    >
+      <path
+        d="m12 3 7 4v10l-7 4-7-4V7l7-4Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+      <path
+        d="m5.5 7.4 6.5 3.7 6.5-3.7M12 11.1V20"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+      <path
+        d="m8.5 5.3 7 4M15.5 5.3l-7 4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.4"
+      />
+    </svg>
+  );
+}
+
 const eventGroupTabs: Array<{ id: EventGroupTabId; label: string }> = [
   { id: "all", label: "All events" },
   { id: "subscription", label: "Subscription" },
   { id: "tracking_confirmed", label: "Tracking confirmed" },
-  { id: "inapp", label: "Inapp" },
+  { id: "inapp", label: "In-app" },
   { id: "tracking_purchase", label: "Tracking purchase" },
   { id: "funnel", label: "Funnel" },
 ];
@@ -130,6 +157,439 @@ const eventGroupPathByTab: Record<
   tracking_purchase: "tracking.purchase",
   funnel: "funnel",
 };
+
+const uiLabels = {
+  en: {
+    mode: "Mode",
+    import: "Import",
+    importFailed: "Import failed",
+    uploadSpec: "Upload spec (.xlsx / .csv)",
+    reading: "Reading...",
+    loadedSpec: "Loaded spec",
+    ready: "Ready",
+    warnings: "Warnings",
+    more: "more",
+    filters: "Filters",
+    filterLabels: {
+      all: "All",
+      passed: "Passed",
+      duplicate: "Duplicate",
+      unknown: "Unknown",
+      not_checked: "Not checked",
+    },
+    statuses: {
+      passed: "Passed",
+      partial: "Partial",
+      duplicate: "Duplicate",
+      unknown: "Unknown",
+      notChecked: "Not checked",
+      live: "Live",
+      connecting: "Connecting",
+      error: "Error",
+      disconnected: "Disconnected",
+    },
+    stats: {
+      passed: "Passed",
+      duplicate: "Duplicate",
+      unknown: "Unknown",
+      partial: "Partial",
+      notChecked: "Not checked",
+    },
+    table: {
+      events: "Events",
+      imported: "Imported",
+      status: "Status",
+      event: "Event",
+      value: "Value",
+      description: "Description",
+      noSpecLoaded:
+        "No spec loaded. Upload a spec file to start analytics validation.",
+      noRowsParsed: "No rows parsed",
+      noRowsParsedHint:
+        "The file was read, but no meaningful rows were found. Try another sheet or check that cells are not all empty.",
+    },
+    coverage: {
+      specCoverage: "Spec coverage",
+      coveredRows: "Covered rows",
+      coverage: "Coverage",
+      passedRows: "Passed rows",
+      partial: "Partial",
+      notChecked: "Not checked",
+    },
+    buttons: {
+      resetResults: "Reset results",
+      exportJson: "Export JSON",
+      exportCheckedXlsx: "Export checked XLSX",
+      save: "Save",
+      delete: "Delete",
+      detectApp: "Detect app",
+      detecting: "Detecting",
+    },
+    titles: {
+      importSpecToReset: "Import a spec to reset results",
+      clearCounters: "Clear counters and matched results",
+      downloadCheckedXlsx: "Download XLSX copy with matched rows checked",
+      importWorkbookForCheckedXlsx:
+        "Import a workbook with a Check column to export checked XLSX",
+      importSpecToExportJson: "Import a spec to export JSON",
+      downloadJson: "Download QA session JSON",
+    },
+    recentResults: "Recent Results",
+    selectedRowDetails: "Selected Row Details",
+    noRowSelected: "No row selected",
+    new: "New",
+    noSpecLoaded:
+      "No spec loaded. Upload a spec file to start analytics validation.",
+    noAnalyticsLinesParsed:
+      "No analytics lines parsed (empty input or no matching markers).",
+    noNotCheckedEventResults:
+      "Not checked is a row filter; there are no event-level results for it.",
+    noAnalyticsLinesInFilter: (filter: string) =>
+      `No ${filter.toLowerCase()} analytics lines in this filter.`,
+    exportMessages: {
+      importWorkbookFirst: "Import a workbook before exporting checked XLSX.",
+      worksheetMetadataMissing:
+        "Checked XLSX export failed: worksheet metadata is missing.",
+      checkColumnMetadataMissing:
+        "Checked XLSX export failed: Check column metadata is missing.",
+      checkedXlsxFailed: "Checked XLSX export failed.",
+      checkedXlsxFailedWithReason: (message: string) =>
+        `Checked XLSX export failed: ${message}`,
+    },
+    android: {
+      packageName: "Android package name",
+      savedPackages: "Saved packages",
+      liveTitle: "Android Live",
+      clearLive: "Clear live",
+      connect: "Connect Android",
+      stop: "Stop",
+      liveLog: "Live log (last 100)",
+      noLiveLines: "No live lines yet. Connect while the game is running.",
+      enterPackageFirst: "Enter Android package name first.",
+      packageMismatch:
+        "The uploaded spec does not match the current package name.",
+      noDevice: "No Android device connected.",
+      uploadSpecFirst: "Please upload a spec first.",
+      connectFailed: "Android connect failed",
+      liveDisconnected: "Live stream disconnected",
+      detectFailed:
+        "Could not detect foreground Android package. Make sure the app is open on device.",
+    },
+    ios: {
+      bundleId: "iOS bundle id",
+      liveTitle: "iOS Live",
+      connect: "Connect iOS",
+      liveLog: "iOS live log (last 100)",
+      noLiveLines: "No iOS live lines yet. Connect while the game is running.",
+      placeholder:
+        "iOS live capture is a placeholder for now. Android package names are not used in this mode.",
+      startFailed: "iOS start failed",
+      connectFailed: "iOS connect failed",
+      liveDisconnected: "Live stream disconnected",
+    },
+    unity: {
+      liveTitle: "Unity Live",
+      connect: "Connect Unity",
+      liveLog: "Unity live log (last 100)",
+      noLiveLines:
+        "No Unity live lines yet. Connect while Unity Editor is running.",
+      logPath: "Unity Editor log path",
+      logPathHint: "Leave empty to use the default Unity Editor.log path.",
+      startFailed: "Unity start failed",
+      connectFailed: "Unity connect failed",
+      liveDisconnected: "Unity live stream disconnected",
+    },
+    logPanel: {
+      logs: "Logs",
+      logsHint: "Paste console lines, then Process",
+      logPlaceholder: "Paste debug console lines here...",
+      clearLogs: "Clear logs",
+      resetSession: "Reset session",
+      process: "Process",
+    },
+  },
+  ru: {
+    mode: "Режим",
+    import: "Импорт",
+    importFailed: "Не удалось импортировать файл",
+    uploadSpec: "Загрузить spec (.xlsx / .csv)",
+    reading: "Чтение...",
+    loadedSpec: "Загруженный spec",
+    ready: "Готово",
+    warnings: "Предупреждения",
+    more: "ещё",
+    filters: "Фильтры",
+    filterLabels: {
+      all: "Все",
+      passed: "Пройдено",
+      duplicate: "Дубликат",
+      unknown: "Неизвестно",
+      not_checked: "Не проверено",
+    },
+    statuses: {
+      passed: "Пройдено",
+      partial: "Частично",
+      duplicate: "Дубликат",
+      unknown: "Неизвестно",
+      notChecked: "Не проверено",
+      live: "Live",
+      connecting: "Подключение",
+      error: "Ошибка",
+      disconnected: "Отключено",
+    },
+    stats: {
+      passed: "Пройдено",
+      duplicate: "Дубликат",
+      unknown: "Неизвестно",
+      partial: "Частично",
+      notChecked: "Не проверено",
+    },
+    table: {
+      events: "События",
+      imported: "Импортировано",
+      status: "Статус",
+      event: "Событие",
+      value: "Значение",
+      description: "Описание",
+      noSpecLoaded:
+        "Спецификация не загружена. Загрузите файл spec, чтобы начать проверку аналитики.",
+      noRowsParsed: "Строки не найдены",
+      noRowsParsedHint:
+        "Файл прочитан, но значимые строки не найдены. Попробуйте другой лист или проверьте, что ячейки не пустые.",
+    },
+    coverage: {
+      specCoverage: "Покрытие spec",
+      coveredRows: "Покрытые строки",
+      coverage: "Покрытие",
+      passedRows: "Пройденные строки",
+      partial: "Частично",
+      notChecked: "Не проверено",
+    },
+    buttons: {
+      resetResults: "Сбросить результаты",
+      exportJson: "Экспорт JSON",
+      exportCheckedXlsx: "Экспорт XLSX с отметками",
+      save: "Сохранить",
+      delete: "Удалить",
+      detectApp: "Определить app",
+      detecting: "Определение",
+    },
+    titles: {
+      importSpecToReset: "Загрузите spec, чтобы сбросить результаты",
+      clearCounters: "Очистить счётчики и найденные результаты",
+      downloadCheckedXlsx: "Скачать XLSX-копию с отмеченными строками",
+      importWorkbookForCheckedXlsx:
+        "Загрузите workbook с колонкой Check для экспорта XLSX с отметками",
+      importSpecToExportJson: "Загрузите spec для экспорта JSON",
+      downloadJson: "Скачать JSON QA-сессии",
+    },
+    recentResults: "Последние события",
+    selectedRowDetails: "Детали выбранной строки",
+    noRowSelected: "Строка не выбрана",
+    new: "Новое",
+    noSpecLoaded:
+      "Спецификация не загружена. Загрузите файл spec, чтобы начать проверку аналитики.",
+    noAnalyticsLinesParsed:
+      "Строки аналитики не распознаны: ввод пустой или маркеры не найдены.",
+    noNotCheckedEventResults:
+      "Не проверено — это фильтр строк; на уровне событий для него нет результатов.",
+    noAnalyticsLinesInFilter: (filter: string) =>
+      `В этом фильтре нет строк аналитики: ${filter}.`,
+    exportMessages: {
+      importWorkbookFirst:
+        "Сначала загрузите workbook для экспорта XLSX с отметками.",
+      worksheetMetadataMissing:
+        "Не удалось экспортировать XLSX: отсутствуют метаданные листа.",
+      checkColumnMetadataMissing:
+        "Не удалось экспортировать XLSX: отсутствуют метаданные колонки Check.",
+      checkedXlsxFailed: "Не удалось экспортировать XLSX с отметками.",
+      checkedXlsxFailedWithReason: (message: string) =>
+        `Не удалось экспортировать XLSX: ${message}`,
+    },
+    android: {
+      packageName: "Android package name",
+      savedPackages: "Сохранённые packages",
+      liveTitle: "Android лог",
+      clearLive: "Очистить live",
+      connect: "Подключить Android",
+      stop: "Остановить",
+      liveLog: "Live-лог (последние 100)",
+      noLiveLines: "Live-строк пока нет. Подключитесь, пока игра запущена.",
+      enterPackageFirst: "Сначала введите Android package name.",
+      packageMismatch:
+        "Загруженный spec не соответствует текущему package name.",
+      noDevice: "Android-устройство не подключено.",
+      uploadSpecFirst: "Сначала загрузите spec.",
+      connectFailed: "Не удалось подключить Android",
+      liveDisconnected: "Live-поток отключился",
+      detectFailed:
+        "Не удалось определить foreground Android package. Убедитесь, что приложение открыто на устройстве.",
+    },
+    ios: {
+      bundleId: "iOS bundle id",
+      liveTitle: "iOS лог",
+      connect: "Подключить iOS",
+      liveLog: "iOS live-лог (последние 100)",
+      noLiveLines: "iOS live-строк пока нет. Подключитесь, пока игра запущена.",
+      placeholder:
+        "iOS live capture пока подготовлен как заглушка. Android package names в этом режиме не используются.",
+      startFailed: "Не удалось запустить iOS",
+      connectFailed: "Не удалось подключить iOS",
+      liveDisconnected: "Live-поток отключился",
+    },
+    unity: {
+      liveTitle: "Unity лог",
+      connect: "Подключить Unity",
+      liveLog: "Unity live-лог (последние 100)",
+      noLiveLines:
+        "Unity live-строк пока нет. Подключитесь, пока Unity Editor запущен.",
+      logPath: "Путь к Unity Editor log",
+      logPathHint:
+        "Оставьте пустым, чтобы использовать стандартный путь Unity Editor.log.",
+      startFailed: "Не удалось запустить Unity",
+      connectFailed: "Не удалось подключить Unity",
+      liveDisconnected: "Unity live-поток отключился",
+    },
+    logPanel: {
+      logs: "Логи",
+      logsHint: "Вставьте строки логов и нажмите «Обработать»",
+      logPlaceholder: "Вставьте строки debug console здесь...",
+      clearLogs: "Очистить логи",
+      resetSession: "Сбросить сессию",
+      process: "Обработать",
+    },
+  },
+} satisfies Record<UiLanguage, {
+  mode: string;
+  import: string;
+  importFailed: string;
+  uploadSpec: string;
+  reading: string;
+  loadedSpec: string;
+  ready: string;
+  warnings: string;
+  more: string;
+  filters: string;
+  filterLabels: Record<SidebarFilter, string>;
+  statuses: {
+    passed: string;
+    partial: string;
+    duplicate: string;
+    unknown: string;
+    notChecked: string;
+    live: string;
+    connecting: string;
+    error: string;
+    disconnected: string;
+  };
+  stats: {
+    passed: string;
+    duplicate: string;
+    unknown: string;
+    partial: string;
+    notChecked: string;
+  };
+  table: {
+    events: string;
+    imported: string;
+    status: string;
+    event: string;
+    value: string;
+    description: string;
+    noSpecLoaded: string;
+    noRowsParsed: string;
+    noRowsParsedHint: string;
+  };
+  coverage: {
+    specCoverage: string;
+    coveredRows: string;
+    coverage: string;
+    passedRows: string;
+    partial: string;
+    notChecked: string;
+  };
+  buttons: {
+    resetResults: string;
+    exportJson: string;
+    exportCheckedXlsx: string;
+    save: string;
+    delete: string;
+    detectApp: string;
+    detecting: string;
+  };
+  titles: {
+    importSpecToReset: string;
+    clearCounters: string;
+    downloadCheckedXlsx: string;
+    importWorkbookForCheckedXlsx: string;
+    importSpecToExportJson: string;
+    downloadJson: string;
+  };
+  recentResults: string;
+  selectedRowDetails: string;
+  noRowSelected: string;
+  new: string;
+  noSpecLoaded: string;
+  noAnalyticsLinesParsed: string;
+  noNotCheckedEventResults: string;
+  noAnalyticsLinesInFilter: (filter: string) => string;
+  exportMessages: {
+    importWorkbookFirst: string;
+    worksheetMetadataMissing: string;
+    checkColumnMetadataMissing: string;
+    checkedXlsxFailed: string;
+    checkedXlsxFailedWithReason: (message: string) => string;
+  };
+  android: {
+    packageName: string;
+    savedPackages: string;
+    liveTitle: string;
+    clearLive: string;
+    connect: string;
+    stop: string;
+    liveLog: string;
+    noLiveLines: string;
+    enterPackageFirst: string;
+    packageMismatch: string;
+    noDevice: string;
+    uploadSpecFirst: string;
+    connectFailed: string;
+    liveDisconnected: string;
+    detectFailed: string;
+  };
+  ios: {
+    bundleId: string;
+    liveTitle: string;
+    connect: string;
+    liveLog: string;
+    noLiveLines: string;
+    placeholder: string;
+    startFailed: string;
+    connectFailed: string;
+    liveDisconnected: string;
+  };
+  unity: {
+    liveTitle: string;
+    connect: string;
+    liveLog: string;
+    noLiveLines: string;
+    logPath: string;
+    logPathHint: string;
+    startFailed: string;
+    connectFailed: string;
+    liveDisconnected: string;
+  };
+  logPanel: {
+    logs: string;
+    logsHint: string;
+    logPlaceholder: string;
+    clearLogs: string;
+    resetSession: string;
+    process: string;
+  };
+}>;
+
+type UiLabels = (typeof uiLabels)[UiLanguage];
 
 function nextLiveLogId(): string {
   return `live-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -282,7 +742,7 @@ function buildTableRows(
   specSource: AnalyticsSpecRow[] | null,
 ) {
   if (result === null) {
-    return MOCK_TABLE_ROWS.map(mockToTableRowModel);
+    return [];
   }
   const source = specSource ?? result.rows;
   return source.map(specToTableRowModel);
@@ -357,20 +817,20 @@ function matchTypeToDot(t: ParsedLogEntry["matchType"]): StatusDotVariant {
   }
 }
 
-function translateStatusLabel(label: string): string {
+function translateStatusLabel(label: string, labels: UiLabels): string {
   switch (label.toLowerCase()) {
     case "passed":
     case "matched":
-      return "Passed";
+      return labels.statuses.passed;
     case "partial":
-      return "Partial";
+      return labels.statuses.partial;
     case "duplicate":
-      return "Duplicate";
+      return labels.statuses.duplicate;
     case "unknown":
-      return "Unknown";
+      return labels.statuses.unknown;
     case "not checked":
     case "not_checked":
-      return "Not checked";
+      return labels.statuses.notChecked;
     default:
       return label;
   }
@@ -457,18 +917,21 @@ function isAndroidPackageContextError(message: string): boolean {
   ].some((pattern) => normalized.includes(pattern));
 }
 
-function androidStartErrorMessage(error: string | undefined): string {
+function androidStartErrorMessage(
+  error: string | undefined,
+  labels: UiLabels,
+): string {
   const message = error?.trim();
   if (!message) {
-    return "Android connect failed";
+    return labels.android.connectFailed;
   }
 
   if (isAndroidDeviceConnectionError(message)) {
-    return "No Android device connected. Connect a device and allow USB debugging.";
+    return labels.android.noDevice;
   }
 
   if (isAndroidPackageContextError(message)) {
-    return "The uploaded spec does not match the current package name.";
+    return labels.android.packageMismatch;
   }
 
   return message;
@@ -478,9 +941,7 @@ export default function Home() {
   const [importResult, setImportResult] = useState<ParsedSpecResult | null>(
     null,
   );
-  const [selectedRowId, setSelectedRowId] = useState<string | null>(
-    MOCK_SELECTED_ROW_ID,
-  );
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [logText, setLogText] = useState("");
@@ -496,13 +957,18 @@ export default function Home() {
     useState<EventGroupTabId>("all");
   const [activePlatform, setActivePlatform] =
     useState<PlatformMode>("android");
-  const [androidPackageName, setAndroidPackageName] = useState(
-    defaultAndroidPackageName,
-  );
+  const [uiLanguage, setUiLanguage] = useState<UiLanguage>("en");
+  const [uiLanguageLoaded, setUiLanguageLoaded] = useState(false);
+  const [androidPackageName, setAndroidPackageName] = useState("");
   const [iosBundleId, setIosBundleId] = useState("");
   const [savedAndroidPackageNames, setSavedAndroidPackageNames] = useState<
     string[]
-  >([defaultAndroidPackageName]);
+  >([]);
+  const [isDetectingAndroidPackage, setIsDetectingAndroidPackage] =
+    useState(false);
+  const [androidPackageDetectError, setAndroidPackageDetectError] = useState<
+    string | null
+  >(null);
   const [androidLiveStatus, setAndroidLiveStatus] =
     useState<AndroidLiveStatus>("disconnected");
   const [androidLiveError, setAndroidLiveError] = useState<string | null>(null);
@@ -530,27 +996,59 @@ export default function Home() {
   const [iosLiveFeedLines, setIosLiveFeedLines] = useState<
     { id: string; text: string }[]
   >([]);
+  const [unityLogPath, setUnityLogPath] = useState("");
+  const [unityLiveStatus, setUnityLiveStatus] =
+    useState<AndroidLiveStatus>("disconnected");
+  const [unityLiveError, setUnityLiveError] = useState<string | null>(null);
+  const [unityLiveFeedLines, setUnityLiveFeedLines] = useState<
+    { id: string; text: string }[]
+  >([]);
+  const [selectedUnityLiveFeedLineId, setSelectedUnityLiveFeedLineId] =
+    useState<string | null>(null);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const iosEventSourceRef = useRef<EventSource | null>(null);
+  const unityEventSourceRef = useRef<EventSource | null>(null);
   const liveFeedScrollRef = useRef<HTMLElement | null>(null);
   const recentResultsRef = useRef<HTMLUListElement | null>(null);
   const importResultRef = useRef(importResult);
+  const originalWorkbookBufferRef = useRef<ArrayBuffer | null>(null);
   const androidLiveContextRef = useRef(0);
   const knownMatchResultIdsRef = useRef<Set<string>>(new Set());
   const highlightTimeoutsRef = useRef<Map<string, number>>(new Map());
   const knownTableLogIdsRef = useRef<Set<string>>(new Set());
   const tableHighlightTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const labels = uiLabels[uiLanguage];
   importResultRef.current = importResult;
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(uiLanguageStorageKey);
+      if (stored === "en" || stored === "ru") {
+        setUiLanguage(stored);
+      }
+    } catch (e) {
+      console.warn("[ui-language] failed to load saved language", e);
+    } finally {
+      setUiLanguageLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!uiLanguageLoaded) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(uiLanguageStorageKey, uiLanguage);
+    } catch (e) {
+      console.warn("[ui-language] failed to save language", e);
+    }
+  }, [uiLanguage, uiLanguageLoaded]);
 
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(androidPackageNamesStorageKey);
       if (!raw) {
-        window.localStorage.setItem(
-          androidPackageNamesStorageKey,
-          JSON.stringify([defaultAndroidPackageName]),
-        );
         return;
       }
 
@@ -569,16 +1067,11 @@ export default function Home() {
       );
 
       if (packageNames.length === 0) {
-        setSavedAndroidPackageNames([defaultAndroidPackageName]);
-        window.localStorage.setItem(
-          androidPackageNamesStorageKey,
-          JSON.stringify([defaultAndroidPackageName]),
-        );
+        setSavedAndroidPackageNames([]);
         return;
       }
 
       setSavedAndroidPackageNames(packageNames);
-      setAndroidPackageName(packageNames[0]);
     } catch (e) {
       console.warn("[android-package] failed to load saved package names", e);
     }
@@ -606,7 +1099,11 @@ export default function Home() {
   const handleLiveFeedLineClick = useCallback((clickedId: string, clickedText: string) => {
     console.debug("[live-click-debug] clickedId:", clickedId);
     console.debug("[live-click-debug] clickedText:", clickedText);
-    setSelectedLiveFeedLineId(clickedId);
+    if (activePlatform === "unity") {
+      setSelectedUnityLiveFeedLineId(clickedId);
+    } else {
+      setSelectedLiveFeedLineId(clickedId);
+    }
     if (!matchBundle?.logs.length) {
       console.debug("[live-click-debug] no logs in current matchBundle");
       return;
@@ -672,7 +1169,7 @@ export default function Home() {
       }));
       console.debug("[live-click-debug] recent logs sample:", recent);
     }
-  }, [matchBundle]);
+  }, [activePlatform, matchBundle]);
 
   useEffect(() => {
     if (matchBundle === null) {
@@ -895,16 +1392,7 @@ export default function Home() {
 
   const selectedRowDetails = useMemo(() => {
     if (importResult === null) {
-      const row = MOCK_TABLE_ROWS.find((r) => r.id === selectedRowId);
-      if (!row) return null;
-      const m = mockToTableRowModel(row);
-      return {
-        event: m.event,
-        statusLabel: m.statusLabel,
-        value: m.value,
-        description: m.description,
-        dotStatus: m.dotStatus,
-      };
+      return null;
     }
     if (importResult.rows.length === 0) return null;
     const row = specRowSource?.find((r) => r.id === selectedRowId);
@@ -958,18 +1446,24 @@ export default function Home() {
     setIsImporting(true);
     setImportError(null);
     try {
-      const res = await importSpec(file);
+      const originalWorkbookBuffer = await file.arrayBuffer();
+      const importFile = new File([originalWorkbookBuffer], file.name, {
+        lastModified: file.lastModified,
+        type: file.type,
+      });
+      const res = await importSpec(importFile);
+      originalWorkbookBufferRef.current = originalWorkbookBuffer;
       setImportResult(res);
       setAndroidSpecRequiredError(null);
       clearSessionResults();
       setSelectedRowId(null);
       clearAndroidLiveContext("spec change");
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : "Import failed");
+      setImportError(e instanceof Error ? e.message : labels.importFailed);
     } finally {
       setIsImporting(false);
     }
-  }, [clearAndroidLiveContext, clearSessionResults]);
+  }, [clearAndroidLiveContext, clearSessionResults, labels]);
 
   const handleProcess = useCallback(() => {
     if (!importResult?.rows.length || !logText.trim()) {
@@ -1098,8 +1592,16 @@ export default function Home() {
   }, []);
 
   const handleAndroidConnect = useCallback(async () => {
+    const packageNameOverride = androidPackageName.trim();
+    if (!packageNameOverride) {
+      setAndroidSpecRequiredError(null);
+      setAndroidLiveError(labels.android.enterPackageFirst);
+      setAndroidLiveStatus("error");
+      return;
+    }
+
     if (!importResultRef.current?.rows.length) {
-      setAndroidSpecRequiredError("Please upload a spec first.");
+      setAndroidSpecRequiredError(labels.android.uploadSpecFirst);
       return;
     }
 
@@ -1116,7 +1618,6 @@ export default function Home() {
         return;
       }
 
-      const packageNameOverride = androidPackageName.trim() || undefined;
       const res = await fetch("/api/android/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1127,7 +1628,7 @@ export default function Home() {
         return;
       }
       if (!data.success) {
-        setAndroidLiveError(androidStartErrorMessage(data.error));
+        setAndroidLiveError(androidStartErrorMessage(data.error, labels));
         setAndroidLiveStatus("error");
         return;
       }
@@ -1176,7 +1677,7 @@ export default function Home() {
           es.close();
           return;
         }
-        setAndroidLiveError("Live stream disconnected");
+        setAndroidLiveError(labels.android.liveDisconnected);
         setAndroidLiveStatus("error");
         es.close();
         if (eventSourceRef.current === es) {
@@ -1188,25 +1689,29 @@ export default function Home() {
         return;
       }
       setAndroidLiveError(
-        e instanceof Error ? e.message : "Android connect failed",
+        e instanceof Error ? e.message : labels.android.connectFailed,
       );
       setAndroidLiveStatus("error");
     }
-  }, [androidPackageName, appendLiveAnalyticsLine]);
+  }, [androidPackageName, appendLiveAnalyticsLine, labels]);
 
   const handleIosConnect = useCallback(async () => {
     setIosLiveError(null);
     setIosLiveStatus("connecting");
+    setIosLiveFeedLines([]);
+    setSelectedLiveFeedLineId(null);
+    iosEventSourceRef.current?.close();
+    iosEventSourceRef.current = null;
+
     try {
       const res = await fetch("/api/ios/start", { method: "POST" });
       const data: { success?: boolean; error?: string } = await res.json();
       if (!data.success) {
-        setIosLiveError(data.error ?? "iOS start failed");
+        setIosLiveError(data.error ?? labels.ios.startFailed);
         setIosLiveStatus("error");
         return;
       }
 
-      iosEventSourceRef.current?.close();
       const es = new EventSource("/api/ios/stream");
       iosEventSourceRef.current = es;
 
@@ -1228,7 +1733,7 @@ export default function Home() {
       };
 
       es.onerror = () => {
-        setIosLiveError("Live stream disconnected");
+        setIosLiveError(labels.ios.liveDisconnected);
         setIosLiveStatus("error");
         es.close();
         if (iosEventSourceRef.current === es) {
@@ -1237,11 +1742,11 @@ export default function Home() {
       };
     } catch (e) {
       setIosLiveError(
-        e instanceof Error ? e.message : "iOS connect failed",
+        e instanceof Error ? e.message : labels.ios.connectFailed,
       );
       setIosLiveStatus("error");
     }
-  }, [appendLiveAnalyticsLine]);
+  }, [appendLiveAnalyticsLine, labels]);
 
   const handleIosStop = useCallback(async () => {
     iosEventSourceRef.current?.close();
@@ -1256,6 +1761,102 @@ export default function Home() {
     setIosLiveError(null);
   }, []);
 
+  const handleClearIosLive = useCallback(() => {
+    setIosLiveFeedLines([]);
+    setSelectedLiveFeedLineId(null);
+    void fetch("/api/ios/clear", { method: "POST" }).catch((e) => {
+      console.warn("[ios-live] failed to clear backend buffer", e);
+    });
+  }, []);
+
+  const handleUnityConnect = useCallback(async () => {
+    setUnityLiveError(null);
+    setUnityLiveStatus("connecting");
+    setUnityLiveFeedLines([]);
+    setSelectedUnityLiveFeedLineId(null);
+    unityEventSourceRef.current?.close();
+    unityEventSourceRef.current = null;
+
+    try {
+      const logPathOverride = unityLogPath.trim() || undefined;
+      const res = await fetch("/api/unity/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logPath: logPathOverride }),
+      });
+      const data: { success?: boolean; error?: string } = await res.json();
+      if (!data.success) {
+        setUnityLiveError(data.error ?? labels.unity.startFailed);
+        setUnityLiveStatus("error");
+        return;
+      }
+
+      const es = new EventSource("/api/unity/stream");
+      unityEventSourceRef.current = es;
+
+      es.onopen = () => {
+        if (unityEventSourceRef.current !== es) {
+          return;
+        }
+        setUnityLiveStatus("live");
+      };
+
+      es.onmessage = (ev) => {
+        if (unityEventSourceRef.current !== es) {
+          return;
+        }
+        const line = ev.data ?? "";
+        if (!line) {
+          return;
+        }
+        const displayLine = toDisplayLiveLine(line);
+        setUnityLiveFeedLines((prev) => {
+          const id = nextLiveLogId();
+          return [...prev, { id, text: displayLine || line.trim() }].slice(-100);
+        });
+        appendLiveAnalyticsLine(line);
+      };
+
+      es.onerror = () => {
+        if (unityEventSourceRef.current !== es) {
+          es.close();
+          return;
+        }
+        setUnityLiveError(labels.unity.liveDisconnected);
+        setUnityLiveStatus("error");
+        es.close();
+        if (unityEventSourceRef.current === es) {
+          unityEventSourceRef.current = null;
+        }
+      };
+    } catch (e) {
+      setUnityLiveError(
+        e instanceof Error ? e.message : labels.unity.connectFailed,
+      );
+      setUnityLiveStatus("error");
+    }
+  }, [appendLiveAnalyticsLine, labels, unityLogPath]);
+
+  const handleUnityStop = useCallback(async () => {
+    unityEventSourceRef.current?.close();
+    unityEventSourceRef.current = null;
+    try {
+      await fetch("/api/unity/stop", { method: "POST" });
+    } catch {
+      /* ignore */
+    }
+    setUnityLiveStatus("disconnected");
+    setUnityLiveError(null);
+  }, []);
+
+  const handleClearUnityLive = useCallback(() => {
+    setUnityLiveFeedLines([]);
+    setSelectedUnityLiveFeedLineId(null);
+    void fetch("/api/unity/clear", { method: "POST" }).catch((e) => {
+      console.warn("[unity-live] failed to clear backend buffer", e);
+    });
+  }, []);
+
   const handleClearAndroidLiveLog = useCallback(() => {
     setLiveFeedLines([]);
     setSelectedLiveFeedLineId(null);
@@ -1267,6 +1868,7 @@ export default function Home() {
     const nextPackageName = value.trim();
 
     setAndroidPackageName(value);
+    setAndroidPackageDetectError(null);
 
     if (nextPackageName === currentPackageName) {
       return;
@@ -1280,6 +1882,34 @@ export default function Home() {
     clearAndroidLiveContext,
     clearSessionResults,
   ]);
+
+  const handleDetectAndroidPackageName = useCallback(async () => {
+    setAndroidPackageDetectError(null);
+    setIsDetectingAndroidPackage(true);
+
+    try {
+      const res = await fetch("/api/android/detect", { method: "POST" });
+      const data: {
+        success?: boolean;
+        packageName?: string;
+        error?: string;
+      } | null = await res.json().catch(() => null);
+      const detectedPackageName = data?.packageName?.trim();
+      const errorMessage = data?.error?.trim() || labels.android.detectFailed;
+
+      if (!res.ok || data?.success === false || !detectedPackageName) {
+        setAndroidPackageDetectError(errorMessage);
+        return;
+      }
+
+      handleAndroidPackageNameChange(detectedPackageName);
+    } catch (e) {
+      console.warn("[android-package] failed to detect package name", e);
+      setAndroidPackageDetectError(labels.android.detectFailed);
+    } finally {
+      setIsDetectingAndroidPackage(false);
+    }
+  }, [handleAndroidPackageNameChange, labels]);
 
   const handleSaveAndroidPackageName = useCallback(() => {
     const packageName = androidPackageName.trim();
@@ -1347,10 +1977,24 @@ export default function Home() {
       eventSourceRef.current = null;
       iosEventSourceRef.current?.close();
       iosEventSourceRef.current = null;
+      unityEventSourceRef.current?.close();
+      unityEventSourceRef.current = null;
       void fetch("/api/android/stop", { method: "POST" });
       void fetch("/api/ios/stop", { method: "POST" });
+      void fetch("/api/unity/stop", { method: "POST" });
     };
   }, []);
+
+  const visibleLiveFeedLines =
+    activePlatform === "unity"
+      ? unityLiveFeedLines
+      : activePlatform === "ios"
+        ? iosLiveFeedLines
+        : liveFeedLines;
+  const visibleSelectedLiveFeedLineId =
+    activePlatform === "unity"
+      ? selectedUnityLiveFeedLineId
+      : selectedLiveFeedLineId;
 
   useEffect(() => {
     const el = resolveLiveFeedScrollElement();
@@ -1358,11 +2002,11 @@ export default function Home() {
       return;
     }
     el.scrollTop = el.scrollHeight;
-  }, [liveFeedLines, resolveLiveFeedScrollElement]);
+  }, [resolveLiveFeedScrollElement, visibleLiveFeedLines]);
 
   useEffect(() => {
     const el = resolveLiveFeedScrollElement();
-    if (!el || liveFeedLines.length === 0) {
+    if (!el || visibleLiveFeedLines.length === 0) {
       return;
     }
 
@@ -1371,7 +2015,7 @@ export default function Home() {
 
     for (let i = 0; i < items.length; i += 1) {
       const item = items[i] as HTMLElement;
-      const live = liveFeedLines[i];
+      const live = visibleLiveFeedLines[i];
       if (!live) {
         continue;
       }
@@ -1383,15 +2027,17 @@ export default function Home() {
       item.dataset.liveId = live.id;
       item.dataset.liveText = live.text;
       item.style.backgroundColor =
-        live.id === selectedLiveFeedLineId ? "rgba(139, 92, 246, 0.2)" : "";
+        live.id === visibleSelectedLiveFeedLineId
+          ? "rgba(139, 92, 246, 0.2)"
+          : "";
 
       const onMouseEnter = () => {
-        if (item.dataset.liveId !== selectedLiveFeedLineId) {
+        if (item.dataset.liveId !== visibleSelectedLiveFeedLineId) {
           item.style.backgroundColor = "rgba(139, 92, 246, 0.12)";
         }
       };
       const onMouseLeave = () => {
-        if (item.dataset.liveId !== selectedLiveFeedLineId) {
+        if (item.dataset.liveId !== visibleSelectedLiveFeedLineId) {
           item.style.backgroundColor = "";
         }
       };
@@ -1416,9 +2062,9 @@ export default function Home() {
     };
   }, [
     handleLiveFeedLineClick,
-    liveFeedLines,
     resolveLiveFeedScrollElement,
-    selectedLiveFeedLineId,
+    visibleLiveFeedLines,
+    visibleSelectedLiveFeedLineId,
   ]);
 
   useEffect(() => {
@@ -1448,7 +2094,7 @@ export default function Home() {
     if (importResult?.rows.length) {
       setSelectedRowId(importResult.rows[0]?.id ?? null);
     } else {
-      setSelectedRowId(MOCK_SELECTED_ROW_ID);
+      setSelectedRowId(null);
     }
   }, [importResult]);
 
@@ -1475,7 +2121,7 @@ export default function Home() {
 
     setSelectedRowId((current) => {
       if (!importResult?.rows.length) {
-        return MOCK_SELECTED_ROW_ID;
+        return null;
       }
 
       return importResult.rows.some((row) => row.id === current)
@@ -1485,8 +2131,17 @@ export default function Home() {
   }, [importResult]);
 
   const statsBarCounts: StatsBarCounts | null = useMemo(() => {
+    if (!importResult) {
+      return {
+        passedLogs: 0,
+        duplicateLogs: 0,
+        unknownLogs: 0,
+        partialLogs: 0,
+        notCheckedRows: 0,
+      };
+    }
+
     if (!matchBundle) {
-      if (!importResult) return null;
       return {
         passedLogs: 0,
         duplicateLogs: 0,
@@ -1520,10 +2175,12 @@ export default function Home() {
 
   const matchResultsEmptyMessage =
     activeSidebarFilter === "not_checked"
-      ? "Not checked is a row filter; there are no event-level results for it."
+      ? labels.noNotCheckedEventResults
       : activeSidebarFilter === "all"
-        ? "No analytics lines parsed (empty input or no matching markers)."
-        : `No ${activeSidebarFilter.replace("_", " ")} analytics lines in this filter.`;
+        ? labels.noAnalyticsLinesParsed
+        : labels.noAnalyticsLinesInFilter(
+            labels.filterLabels[activeSidebarFilter],
+          );
 
   const processDisabled =
     !importResult?.rows.length || !logText.trim();
@@ -1532,6 +2189,12 @@ export default function Home() {
     androidLiveStatus === "connecting" || androidLiveStatus === "live";
 
   const androidStopDisabled = androidLiveStatus === "disconnected";
+  const iosConnectDisabled =
+    iosLiveStatus === "connecting" || iosLiveStatus === "live";
+  const iosStopDisabled = iosLiveStatus === "disconnected";
+  const unityConnectDisabled =
+    unityLiveStatus === "connecting" || unityLiveStatus === "live";
+  const unityStopDisabled = unityLiveStatus === "disconnected";
   const trimmedAndroidPackageName = androidPackageName.trim();
   const savedAndroidPackageSelectValue = savedAndroidPackageNames.includes(
     trimmedAndroidPackageName,
@@ -1544,6 +2207,7 @@ export default function Home() {
   const deleteAndroidPackageDisabled =
     !trimmedAndroidPackageName ||
     !savedAndroidPackageNames.includes(trimmedAndroidPackageName);
+  const androidDetectPackageDisabled = isDetectingAndroidPackage;
 
   const coverageSummaryData = useMemo(() => {
     if (!importResult?.rows.length || !specRowSource) return null;
@@ -1568,6 +2232,17 @@ export default function Home() {
   }, [importResult, specRowSource]);
 
   const showCoverageSummary = isImported && !isEmptyImport;
+  const usedSheetNameForCheckedExport = importResult?.debug.usedSheetName;
+  const checkColumnIndexForCheckedExport = importResult?.debug.checkColumnIndex;
+  const canExportCheckedXlsx =
+    !isImporting &&
+    originalWorkbookBufferRef.current !== null &&
+    specRowSource !== null &&
+    typeof usedSheetNameForCheckedExport === "string" &&
+    usedSheetNameForCheckedExport.trim() !== "" &&
+    typeof checkColumnIndexForCheckedExport === "number" &&
+    Number.isInteger(checkColumnIndexForCheckedExport) &&
+    checkColumnIndexForCheckedExport >= 0;
 
   const handleExportJson = useCallback(() => {
     if (!importResult) {
@@ -1653,16 +2328,87 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }, [activeFileName, coverageSummaryData, importResult, matchBundle, specRowSource]);
 
+  const handleExportCheckedXlsx = useCallback(async () => {
+    const originalWorkbook = originalWorkbookBufferRef.current;
+    const rows = specRowSource;
+    const usedSheetName = importResult?.debug.usedSheetName;
+    const checkColumnIndex = importResult?.debug.checkColumnIndex;
+
+    if (!originalWorkbook || rows === null) {
+      setProcessMessage(labels.exportMessages.importWorkbookFirst);
+      return;
+    }
+
+    if (typeof usedSheetName !== "string" || usedSheetName.trim() === "") {
+      setProcessMessage(labels.exportMessages.worksheetMetadataMissing);
+      return;
+    }
+
+    if (
+      typeof checkColumnIndex !== "number" ||
+      !Number.isInteger(checkColumnIndex) ||
+      checkColumnIndex < 0
+    ) {
+      setProcessMessage(labels.exportMessages.checkColumnMetadataMissing);
+      return;
+    }
+
+    try {
+      const checkedWorkbook = await exportCheckedWorkbook({
+        originalWorkbook,
+        rows,
+        usedSheetName,
+        checkColumnIndex,
+      });
+      const now = new Date();
+      const pad2 = (n: number) => String(n).padStart(2, "0");
+      const ts =
+        `${now.getFullYear()}-` +
+        `${pad2(now.getMonth() + 1)}-` +
+        `${pad2(now.getDate())}-` +
+        `${pad2(now.getHours())}-` +
+        `${pad2(now.getMinutes())}-` +
+        `${pad2(now.getSeconds())}`;
+      const safeSpec =
+        activeFileName
+          ? String(activeFileName)
+              .replace(/\.[a-z0-9]+$/i, "")
+              .replace(/[^a-z0-9-_]+/gi, "_")
+              .replace(/^_+|_+$/g, "")
+              .slice(0, 40)
+          : "";
+      const fileName = `analytics-checker-checked-${safeSpec || "spec"}-${ts}.xlsx`;
+      const blob = new Blob([checkedWorkbook], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setProcessMessage(null);
+    } catch (e) {
+      setProcessMessage(
+        e instanceof Error
+          ? labels.exportMessages.checkedXlsxFailedWithReason(e.message)
+          : labels.exportMessages.checkedXlsxFailed,
+      );
+    }
+  }, [activeFileName, importResult, labels, specRowSource]);
+
   const highlightedMatchResultIdSet = new Set(highlightedMatchResultIds);
   const isAndroidMode = activePlatform === "android";
-  const isIosMode = activePlatform === "ios";
+  const isUnityMode = activePlatform === "unity";
 
   return (
     <div className="min-h-screen bg-[#0f1115] p-6 text-[#f3f4f6]">
       <div className="grid h-[calc(100vh-48px)] w-full min-w-0 grid-cols-[64px_240px_minmax(0,1fr)_320px] gap-4 [&>*]:min-h-0 [&>*]:h-full">
         <nav className="flex min-h-0 flex-col items-center gap-2 rounded-2xl border border-[#2a2f3a] bg-[#171923] px-2 py-4 shadow-lg shadow-black/20">
           <p className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-[#6b7280]">
-            Mode
+            {labels.mode}
           </p>
           {platformItems.map((item) => {
             const active = item.id === activePlatform;
@@ -1683,8 +2429,10 @@ export default function Home() {
               >
                 {item.id === "android" ? (
                   <AndroidPlatformIcon />
-                ) : (
+                ) : item.id === "ios" ? (
                   <ApplePlatformIcon />
+                ) : (
+                  <UnityPlatformIcon />
                 )}
               </button>
             );
@@ -1698,11 +2446,22 @@ export default function Home() {
           activeFileName={activeFileName}
           activeFilter={activeSidebarFilter}
           onFilterChange={setActiveSidebarFilter}
+          labels={{
+            import: labels.import,
+            reading: labels.reading,
+            uploadSpec: labels.uploadSpec,
+            loadedSpec: labels.loadedSpec,
+            ready: labels.ready,
+            warnings: labels.warnings,
+            more: labels.more,
+            filters: labels.filters,
+            filterLabels: labels.filterLabels,
+          }}
         />
         <main className="flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden rounded-2xl border border-[#2a2f3a] bg-[#171923] p-5 shadow-lg shadow-black/20">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-              <StatsBar counts={statsBarCounts} />
+              <StatsBar counts={statsBarCounts} labels={labels.stats} />
               <button
                 type="button"
                 onClick={handleResetResults}
@@ -1710,25 +2469,68 @@ export default function Home() {
                 className="h-9 shrink-0 rounded-lg border border-[#2a2f3a] bg-[#1c1f2a] px-3 text-xs font-medium text-[#e5e7eb] transition hover:border-[#3d4554] hover:bg-[#232736] disabled:cursor-not-allowed disabled:opacity-45"
                 title={
                   !importResult
-                    ? "Import a spec to reset results"
-                    : "Clear counters and matched results"
+                    ? labels.titles.importSpecToReset
+                    : labels.titles.clearCounters
                 }
               >
-                Reset results
+                {labels.buttons.resetResults}
               </button>
             </div>
-            <button
-              type="button"
-              onClick={handleExportJson}
-              disabled={!importResult}
-              className="shrink-0 rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-2 text-xs font-medium text-[#e5e7eb] transition hover:border-[#3d4554] hover:bg-[#232736] disabled:cursor-not-allowed disabled:opacity-45"
-              title={!importResult ? "Import a spec to export JSON" : "Download QA session JSON"}
-            >
-              Export JSON
-            </button>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              <div className="grid h-9 grid-cols-2 rounded-lg border border-[#2a2f3a] bg-[#171923] p-0.5">
+                {(["en", "ru"] as const).map((language) => {
+                  const active = language === uiLanguage;
+                  return (
+                    <button
+                      key={language}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setUiLanguage(language)}
+                      className={[
+                        "rounded-md px-2 text-[11px] font-semibold uppercase transition",
+                        active
+                          ? "bg-violet-500/25 text-violet-100"
+                          : "text-[#9ca3af] hover:text-[#e5e7eb]",
+                      ].join(" ")}
+                    >
+                      {language.toUpperCase()}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={handleExportCheckedXlsx}
+                disabled={!canExportCheckedXlsx}
+                className="shrink-0 rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-2 text-xs font-medium text-[#e5e7eb] transition hover:border-[#3d4554] hover:bg-[#232736] disabled:cursor-not-allowed disabled:opacity-45"
+                title={
+                  canExportCheckedXlsx
+                    ? labels.titles.downloadCheckedXlsx
+                    : labels.titles.importWorkbookForCheckedXlsx
+                }
+              >
+                {labels.buttons.exportCheckedXlsx}
+              </button>
+              <button
+                type="button"
+                onClick={handleExportJson}
+                disabled={!importResult}
+                className="shrink-0 rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-2 text-xs font-medium text-[#e5e7eb] transition hover:border-[#3d4554] hover:bg-[#232736] disabled:cursor-not-allowed disabled:opacity-45"
+                title={
+                  !importResult
+                    ? labels.titles.importSpecToExportJson
+                    : labels.titles.downloadJson
+                }
+              >
+                {labels.buttons.exportJson}
+              </button>
+            </div>
           </div>
           {showCoverageSummary && coverageSummaryData ? (
-            <CoverageSummary data={coverageSummaryData} />
+            <CoverageSummary
+              data={coverageSummaryData}
+              labels={labels.coverage}
+            />
           ) : null}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden">
             <AnalyticsTable
@@ -1764,37 +2566,27 @@ export default function Home() {
               }
               isEmptyImport={isEmptyImport}
               isImported={isImported}
+              labels={{
+                ...labels.table,
+                statuses: labels.statuses,
+              }}
             />
             <div className="grid max-h-[260px] shrink-0 grid-cols-1 gap-3 overflow-hidden xl:h-[150px] xl:max-h-[18vh] xl:grid-cols-[minmax(0,1fr)_minmax(240px,320px)]">
               <div className="flex min-h-[120px] min-w-0 flex-col gap-1.5 overflow-hidden rounded-2xl border border-[#2a2f3a] bg-[#171923] p-2.5 shadow-lg shadow-black/20 xl:h-full xl:min-h-0">
                 <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-[#9ca3af]">
-                  Recent results
+                  {labels.recentResults}
                 </h3>
                 <ul
                   ref={recentResultsRef}
                   className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overflow-x-hidden pr-1"
                 >
-                  {matchResultsForPanel === null
-                    ? MOCK_RECENT_LOG_ITEMS.map((item) => (
-                        <li
-                          key={item.id}
-                          className="shrink-0 rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] p-2"
-                        >
-                          <div className="flex min-w-0 items-start gap-2">
-                            <StatusDot
-                              variant={item.status}
-                              className="mt-1 shrink-0"
-                            />
-                            <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[#d1d5db]">
-                              {item.line}
-                            </pre>
-                          </div>
-                        </li>
-                      ))
-                    : matchResultsForPanel.length === 0 ? (
+                  {matchResultsForPanel === null ? (
+                    <li className="shrink-0 rounded-xl border border-[#2a2f3a] bg-[#1c1f2a]/50 p-2 text-xs text-[#9ca3af]">
+                      {labels.noSpecLoaded}
+                    </li>
+                  ) : matchResultsForPanel.length === 0 ? (
                         <li className="shrink-0 rounded-xl border border-[#2a2f3a] bg-[#1c1f2a]/50 p-2 text-xs text-[#9ca3af]">
-                          {matchResultsEmptyMessage ??
-                            "No analytics lines parsed (empty input or no matching markers)."}
+                          {matchResultsEmptyMessage}
                         </li>
                       ) : (
                         matchResultsForPanel.map((entry) => {
@@ -1820,11 +2612,11 @@ export default function Home() {
                                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     {highlighted ? (
                                       <span className="shrink-0 rounded border border-emerald-400/45 bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-200">
-                                        New
+                                        {labels.new}
                                       </span>
                                     ) : null}
                                     <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-[#9ca3af]">
-                                      {entry.matchType}
+                                      {translateStatusLabel(entry.matchType, labels)}
                                     </span>
                                     {entry.eventPath ? (
                                       <span className="min-w-0 break-all font-mono text-[11px] text-violet-200/90">
@@ -1851,27 +2643,34 @@ export default function Home() {
 
               <div className="min-h-[120px] min-w-0 overflow-y-auto rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] p-2.5 xl:h-full xl:min-h-0">
                 <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#9ca3af]">
-                  Selected row details
+                  {labels.selectedRowDetails}
                 </h3>
                 {selectedRowDetails ? (
                   <dl className="mt-1 space-y-0.5 text-[11px]">
                     <div className="flex items-center justify-between gap-2">
-                      <dt className="text-[#9ca3af]">Status</dt>
+                      <dt className="text-[#9ca3af]">{labels.table.status}</dt>
                       <dd className="flex items-center gap-2 text-right text-[#e5e7eb]">
                         <StatusDot variant={selectedRowDetails.dotStatus} />
                         <span>
-                          {translateStatusLabel(selectedRowDetails.statusLabel)}
+                          {translateStatusLabel(
+                            selectedRowDetails.statusLabel,
+                            labels,
+                          )}
                         </span>
                       </dd>
                     </div>
                     <div className="flex justify-between gap-2">
-                      <dt className="shrink-0 text-[#9ca3af]">Event</dt>
+                      <dt className="shrink-0 text-[#9ca3af]">
+                        {labels.table.event}
+                      </dt>
                       <dd className="max-w-[min(100%,36rem)] break-all text-right font-mono text-violet-200/95">
                         {selectedRowDetails.event}
                       </dd>
                     </div>
                     <div className="flex justify-between gap-2">
-                      <dt className="shrink-0 text-[#9ca3af]">Value</dt>
+                      <dt className="shrink-0 text-[#9ca3af]">
+                        {labels.table.value}
+                      </dt>
                       <dd className="max-w-[min(100%,36rem)] break-all text-right font-mono text-[#9ca3af]">
                         {selectedRowDetails.value ?? "-"}
                       </dd>
@@ -1882,7 +2681,7 @@ export default function Home() {
                   </dl>
                 ) : (
                   <p className="mt-2 text-xs text-[#9ca3af]">
-                    No row selected
+                    {labels.noRowSelected}
                   </p>
                 )}
               </div>
@@ -1892,16 +2691,38 @@ export default function Home() {
         <div className="flex min-h-0 flex-col gap-3">
           {isAndroidMode ? (
             <div className="flex flex-col gap-2">
-              <label className="flex flex-col gap-1 text-xs font-medium text-[#aab2c0]">
-                Android package name
-                <input
-                  type="text"
-                  value={androidPackageName}
-                  onChange={(e) => handleAndroidPackageNameChange(e.target.value)}
-                  placeholder="com.example.app"
-                  className="h-9 rounded-lg border border-[#2a2f3a] bg-[#171923] px-3 text-sm text-[#f3f4f6] outline-none transition placeholder:text-[#5d6675] focus:border-[#4b5568]"
-                />
-              </label>
+              <div className="flex flex-col gap-1 text-xs font-medium text-[#aab2c0]">
+                <label htmlFor="android-package-name">
+                  {labels.android.packageName}
+                </label>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                  <input
+                    id="android-package-name"
+                    type="text"
+                    value={androidPackageName}
+                    onChange={(e) =>
+                      handleAndroidPackageNameChange(e.target.value)
+                    }
+                    placeholder="com.example.game"
+                    className="h-9 min-w-0 rounded-lg border border-[#2a2f3a] bg-[#171923] px-3 text-sm text-[#f3f4f6] outline-none transition placeholder:text-[#5d6675] focus:border-[#4b5568]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleDetectAndroidPackageName}
+                    disabled={androidDetectPackageDisabled}
+                    className="h-9 rounded-lg border border-[#2a2f3a] bg-[#1c1f2a] px-3 text-xs font-medium text-[#e5e7eb] transition hover:border-[#3d4554] hover:bg-[#232736] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {isDetectingAndroidPackage
+                      ? labels.buttons.detecting
+                      : labels.buttons.detectApp}
+                  </button>
+                </div>
+              </div>
+              {androidPackageDetectError ? (
+                <p className="text-[11px] leading-snug text-red-300">
+                  {androidPackageDetectError}
+                </p>
+              ) : null}
               <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
                 <select
                   value={savedAndroidPackageSelectValue}
@@ -1911,7 +2732,7 @@ export default function Home() {
                   className="h-9 min-w-0 rounded-lg border border-[#2a2f3a] bg-[#171923] px-2 text-xs text-[#f3f4f6] outline-none transition focus:border-[#4b5568]"
                 >
                   <option value="" disabled>
-                    Saved packages
+                    {labels.android.savedPackages}
                   </option>
                   {savedAndroidPackageNames.map((packageName) => (
                     <option key={packageName} value={packageName}>
@@ -1925,7 +2746,7 @@ export default function Home() {
                   disabled={saveAndroidPackageDisabled}
                   className="h-9 rounded-lg border border-[#2a2f3a] bg-[#1c1f2a] px-3 text-xs font-medium text-[#e5e7eb] transition hover:border-[#3d4554] hover:bg-[#232736] disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  Save
+                  {labels.buttons.save}
                 </button>
                 <button
                   type="button"
@@ -1933,14 +2754,14 @@ export default function Home() {
                   disabled={deleteAndroidPackageDisabled}
                   className="h-9 rounded-lg border border-[#2a2f3a] bg-[#1c1f2a] px-3 text-xs font-medium text-[#e5e7eb] transition hover:border-red-500/35 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  Delete
+                  {labels.buttons.delete}
                 </button>
               </div>
             </div>
-          ) : (
+          ) : isUnityMode ? null : (
             <div className="space-y-2 rounded-2xl border border-[#2a2f3a] bg-[#171923] p-3 shadow-lg shadow-black/20">
               <label className="flex flex-col gap-1 text-xs font-medium text-[#aab2c0]">
-                iOS bundle id
+                {labels.ios.bundleId}
                 <input
                   type="text"
                   value={iosBundleId}
@@ -1950,8 +2771,7 @@ export default function Home() {
                 />
               </label>
               <p className="text-[11px] leading-snug text-[#9ca3af]">
-                iOS live capture is a placeholder for now. Android package
-                names are not used in this mode.
+                {labels.ios.placeholder}
               </p>
             </div>
           )}
@@ -1965,47 +2785,123 @@ export default function Home() {
               processDisabled={processDisabled}
               processMessage={processMessage}
               androidLiveStatus={
-                isAndroidMode ? androidLiveStatus : "disconnected"
+                isAndroidMode
+                  ? androidLiveStatus
+                  : isUnityMode
+                    ? unityLiveStatus
+                    : iosLiveStatus
               }
-              androidLiveError={isAndroidMode ? androidLiveError : null}
+              androidLiveError={
+                isAndroidMode
+                  ? androidLiveError
+                  : isUnityMode
+                    ? unityLiveError
+                    : iosLiveError
+              }
               androidSpecRequiredError={
                 isAndroidMode ? androidSpecRequiredError : null
               }
-              liveFeedLines={isAndroidMode ? liveFeedLines : []}
+              liveFeedLines={
+                isAndroidMode
+                  ? liveFeedLines
+                  : isUnityMode
+                    ? unityLiveFeedLines
+                    : iosLiveFeedLines
+              }
               onAndroidConnect={
-                isAndroidMode ? handleAndroidConnect : () => undefined
+                isAndroidMode
+                  ? handleAndroidConnect
+                  : isUnityMode
+                    ? handleUnityConnect
+                    : handleIosConnect
               }
               onAndroidStop={
-                isAndroidMode ? handleAndroidStop : () => undefined
+                isAndroidMode
+                  ? handleAndroidStop
+                  : isUnityMode
+                    ? handleUnityStop
+                    : handleIosStop
               }
               onAndroidClearLive={
-                isAndroidMode ? handleClearAndroidLiveLog : () => undefined
+                isAndroidMode
+                  ? handleClearAndroidLiveLog
+                  : isUnityMode
+                    ? handleClearUnityLive
+                    : handleClearIosLive
               }
               androidConnectDisabled={
-                isAndroidMode ? androidConnectDisabled : true
+                isAndroidMode
+                  ? androidConnectDisabled
+                  : isUnityMode
+                    ? unityConnectDisabled
+                    : iosConnectDisabled
               }
-              androidStopDisabled={isAndroidMode ? androidStopDisabled : true}
-              liveTitle={isAndroidMode ? "Android Live" : "iOS Live"}
-              liveStatusLabel={isIosMode ? "Not ready" : undefined}
-              clearLiveLabel={isAndroidMode ? "Clear live" : "Clear iOS"}
-              connectLabel={isAndroidMode ? "Connect Android" : "Connect iOS"}
-              stopLabel="Stop"
+              androidStopDisabled={
+                isAndroidMode
+                  ? androidStopDisabled
+                  : isUnityMode
+                    ? unityStopDisabled
+                    : iosStopDisabled
+              }
+              liveTitle={
+                isAndroidMode
+                  ? labels.android.liveTitle
+                  : isUnityMode
+                    ? labels.unity.liveTitle
+                    : labels.ios.liveTitle
+              }
+              liveStatusLabel={undefined}
+              clearLiveLabel={labels.android.clearLive}
+              connectLabel={
+                isAndroidMode
+                  ? labels.android.connect
+                  : isUnityMode
+                    ? labels.unity.connect
+                    : labels.ios.connect
+              }
+              stopLabel={labels.android.stop}
               liveLogLabel={
                 isAndroidMode
-                  ? "Live log (last 100)"
-                  : "iOS live log (placeholder)"
+                  ? labels.android.liveLog
+                  : isUnityMode
+                    ? labels.unity.liveLog
+                    : labels.ios.liveLog
               }
               liveEmptyMessage={
                 isAndroidMode
-                  ? "No live lines yet. Connect while the game is running."
-                  : "iOS live capture is not implemented yet."
+                  ? labels.android.noLiveLines
+                  : isUnityMode
+                    ? labels.unity.noLiveLines
+                    : labels.ios.noLiveLines
               }
-              livePlaceholderMessage={
-                isIosMode
-                  ? "iOS live capture is not wired yet. Paste logs manually below while this mode is being prepared."
-                  : null
+              livePlaceholderMessage={null}
+              liveClearDisabled={false}
+              livePathLabel={
+                isUnityMode ? labels.unity.logPath : undefined
               }
-              liveClearDisabled={isIosMode}
+              livePathValue={isUnityMode ? unityLogPath : undefined}
+              onLivePathChange={
+                isUnityMode ? setUnityLogPath : undefined
+              }
+              livePathPlaceholder={
+                isUnityMode
+                  ? "C:\\Users\\user\\AppData\\Local\\Unity\\Editor\\Editor.log"
+                  : undefined
+              }
+              livePathHint={
+                isUnityMode
+                  ? labels.unity.logPathHint
+                  : undefined
+              }
+              labels={{
+                ...labels.logPanel,
+                statuses: {
+                  disconnected: labels.statuses.disconnected,
+                  connecting: labels.statuses.connecting,
+                  live: labels.statuses.live,
+                  error: labels.statuses.error,
+                },
+              }}
             />
           </div>
         </div>

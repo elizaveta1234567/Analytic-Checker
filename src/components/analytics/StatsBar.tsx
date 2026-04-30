@@ -12,51 +12,62 @@ export type StatsBarCounts = {
 export type StatsBarProps = {
   /** When set (including after Process with zeros), replaces mock card values. */
   counts?: StatsBarCounts | null;
+  labels: {
+    passed: string;
+    duplicate: string;
+    unknown: string;
+    partial: string;
+    notChecked: string;
+  };
 };
 
-function translateStatLabel(label: string): string {
+function translateStatLabel(
+  label: string,
+  labels: StatsBarProps["labels"],
+): string {
   switch (label.toLowerCase()) {
     case "passed":
-      return "Passed";
+      return labels.passed;
+    case "duplicate":
     case "duplicates":
-      return "Duplicates";
+      return labels.duplicate;
     case "unknown":
-      return "Unknown";
+      return labels.unknown;
     case "partial":
-      return "Partial";
+      return labels.partial;
     case "not checked":
-      return "Not checked";
+      return labels.notChecked;
     default:
       return label;
   }
 }
 
-export function StatsBar({ counts }: StatsBarProps) {
+export function StatsBar({ counts, labels }: StatsBarProps) {
   const cards =
     counts === null || counts === undefined
       ? MOCK_STAT_CARDS
       : [
           {
             id: "passed",
-            label: "Passed",
+            label: labels.passed,
             value: String(counts.passedLogs),
             variant: "passed" as const,
           },
           {
             id: "dup",
-            label: "Duplicates",
+            label: labels.duplicate,
             value: String(counts.duplicateLogs),
             variant: "duplicate" as const,
           },
           {
             id: "unk",
-            label: "Unknown",
+            label: labels.unknown,
             value: String(counts.unknownLogs),
             variant: "unknown" as const,
           },
           {
             id: "nc",
-            label: "Not checked",
+            label: labels.notChecked,
             value: String(counts.notCheckedRows),
             variant: "unchecked" as const,
           },
@@ -72,7 +83,7 @@ export function StatsBar({ counts }: StatsBarProps) {
           <div className="flex items-center gap-2">
             <StatusDot variant={card.variant} />
             <span className="text-[11px] font-medium uppercase tracking-wide text-[#9ca3af]">
-              {translateStatLabel(card.label)}
+              {translateStatLabel(card.label, labels)}
             </span>
           </div>
           <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-[#f3f4f6]">

@@ -21,12 +21,12 @@ export type SidebarFilter =
   | "unknown"
   | "not_checked";
 
-const filterItems: Array<{ id: SidebarFilter; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "passed", label: "Passed" },
-  { id: "duplicate", label: "Duplicate" },
-  { id: "unknown", label: "Unknown" },
-  { id: "not_checked", label: "Not checked" },
+const filterItems: Array<{ id: SidebarFilter }> = [
+  { id: "all" },
+  { id: "passed" },
+  { id: "duplicate" },
+  { id: "unknown" },
+  { id: "not_checked" },
 ];
 
 export type SidebarProps = {
@@ -37,6 +37,17 @@ export type SidebarProps = {
   activeFileName: string | null;
   activeFilter: SidebarFilter;
   onFilterChange: (filter: SidebarFilter) => void;
+  labels: {
+    import: string;
+    reading: string;
+    uploadSpec: string;
+    loadedSpec: string;
+    ready: string;
+    warnings: string;
+    more: string;
+    filters: string;
+    filterLabels: Record<SidebarFilter, string>;
+  };
 };
 
 export function Sidebar({
@@ -47,6 +58,7 @@ export function Sidebar({
   activeFileName,
   activeFilter,
   onFilterChange,
+  labels,
 }: SidebarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -59,7 +71,7 @@ export function Sidebar({
       </div>
 
       <div className="shrink-0 space-y-4 border-b border-[#2a2f3a] px-5 py-4">
-        <h2 className={sectionTitle}>Import</h2>
+        <h2 className={sectionTitle}>{labels.import}</h2>
         <input
           ref={inputRef}
           type="file"
@@ -77,7 +89,7 @@ export function Sidebar({
           onClick={() => inputRef.current?.click()}
           className="w-full rounded-lg border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-2.5 text-[13px] font-medium text-[#f3f4f6] transition hover:border-violet-500/40 hover:bg-[#232736] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isImporting ? "Reading..." : "Upload spec (.xlsx / .csv)"}
+          {isImporting ? labels.reading : labels.uploadSpec}
         </button>
         {activeFileName ? (
           <div
@@ -86,10 +98,10 @@ export function Sidebar({
           >
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-200/90">
-                Loaded spec
+                {labels.loadedSpec}
               </p>
               <span className="rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-100">
-                READY
+                {labels.ready}
               </span>
             </div>
             <p className="truncate text-[13px] font-semibold leading-snug text-[#f3f4f6]">
@@ -103,7 +115,7 @@ export function Sidebar({
         {importWarnings.length > 0 ? (
           <div className="max-h-28 overflow-y-auto rounded-lg border border-amber-500/25 bg-amber-500/[0.08] p-2.5">
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200/90">
-              Warnings ({importWarnings.length})
+              {labels.warnings} ({importWarnings.length})
             </p>
             <ul className="space-y-1 text-[11px] leading-snug text-amber-100/80">
               {importWarnings.slice(0, 12).map((w, i) => (
@@ -112,7 +124,7 @@ export function Sidebar({
             </ul>
             {importWarnings.length > 12 ? (
               <p className="mt-1 text-[10px] text-amber-200/60">
-                +{importWarnings.length - 12} more
+                +{importWarnings.length - 12} {labels.more}
               </p>
             ) : null}
           </div>
@@ -121,7 +133,7 @@ export function Sidebar({
 
       <nav className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 py-4">
         <div>
-          <h2 className={sectionTitle}>Filters</h2>
+          <h2 className={sectionTitle}>{labels.filters}</h2>
           <ul className="flex flex-col gap-0.5">
             {filterItems.map((item) => {
               const active = item.id === activeFilter;
@@ -132,7 +144,7 @@ export function Sidebar({
                     onClick={() => onFilterChange(item.id)}
                     className={`${listItemBase} ${active ? listItemActive : listItemIdle}`}
                   >
-                    {item.label}
+                    {labels.filterLabels[item.id]}
                   </button>
                 </li>
               );

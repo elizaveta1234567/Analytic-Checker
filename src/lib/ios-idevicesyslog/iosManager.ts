@@ -57,10 +57,15 @@ if (!globalAny.__iosManager) {
     }
   }
 
+  function resetPendingBlock(): void {
+    pendingAnalyticsBlock = null;
+  }
+
   function teardownSyslog(reason: "stop" | "exit") {
     if (reason === "stop") {
       syslogChild?.kill();
     }
+    resetPendingBlock();
     syslogReadline?.close();
     syslogReadline = null;
     syslogChild = null;
@@ -75,6 +80,7 @@ if (!globalAny.__iosManager) {
       startInFlight = true;
       try {
         streamState.clear();
+        resetPendingBlock();
 
         const args: string[] = [];
         if (udid) {
@@ -171,4 +177,3 @@ if (!globalAny.__iosManager) {
 }
 
 export const iosManager = globalAny.__iosManager;
-

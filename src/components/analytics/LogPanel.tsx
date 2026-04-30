@@ -31,15 +31,29 @@ export type LogPanelProps = {
   onAndroidClearLive: () => void;
   androidConnectDisabled: boolean;
   androidStopDisabled: boolean;
-  liveTitle?: string;
+  liveTitle: string;
   liveStatusLabel?: string;
-  clearLiveLabel?: string;
-  connectLabel?: string;
-  stopLabel?: string;
-  liveLogLabel?: string;
-  liveEmptyMessage?: string;
+  clearLiveLabel: string;
+  connectLabel: string;
+  stopLabel: string;
+  liveLogLabel: string;
+  liveEmptyMessage: string;
   livePlaceholderMessage?: string | null;
   liveClearDisabled?: boolean;
+  livePathLabel?: string;
+  livePathValue?: string;
+  onLivePathChange?: (value: string) => void;
+  livePathPlaceholder?: string;
+  livePathHint?: string;
+  labels: {
+    logs: string;
+    logsHint: string;
+    logPlaceholder: string;
+    clearLogs: string;
+    resetSession: string;
+    process: string;
+    statuses: Record<AndroidLiveStatus, string>;
+  };
 };
 
 function androidStatusBadgeClass(status: AndroidLiveStatus): string {
@@ -52,19 +66,6 @@ function androidStatusBadgeClass(status: AndroidLiveStatus): string {
       return "border border-red-500/35 bg-red-500/15 text-red-200";
     default:
       return "border border-[#3d4554] bg-[#1c1f2a] text-[#9ca3af]";
-  }
-}
-
-function androidStatusLabel(status: AndroidLiveStatus): string {
-  switch (status) {
-    case "live":
-      return "Live";
-    case "connecting":
-      return "Connecting";
-    case "error":
-      return "Error";
-    default:
-      return "Disconnected";
   }
 }
 
@@ -85,15 +86,21 @@ export function LogPanel({
   onAndroidClearLive,
   androidConnectDisabled,
   androidStopDisabled,
-  liveTitle = "Android Live",
+  liveTitle,
   liveStatusLabel,
-  clearLiveLabel = "Clear live",
-  connectLabel = "Connect Android",
-  stopLabel = "Stop",
-  liveLogLabel = "Live log (last 100)",
-  liveEmptyMessage = "No live lines yet. Connect while the game is running.",
+  clearLiveLabel,
+  connectLabel,
+  stopLabel,
+  liveLogLabel,
+  liveEmptyMessage,
   livePlaceholderMessage = null,
   liveClearDisabled = false,
+  livePathLabel,
+  livePathValue = "",
+  onLivePathChange,
+  livePathPlaceholder,
+  livePathHint,
+  labels,
 }: LogPanelProps) {
   return (
     <aside className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overflow-x-hidden pr-1">
@@ -116,7 +123,7 @@ export function LogPanel({
                 androidLiveStatus,
               )}`}
             >
-              {liveStatusLabel ?? androidStatusLabel(androidLiveStatus)}
+              {liveStatusLabel ?? labels.statuses[androidLiveStatus]}
             </span>
           </div>
         </div>
@@ -138,6 +145,23 @@ export function LogPanel({
             {stopLabel}
           </button>
         </div>
+        {livePathLabel && onLivePathChange ? (
+          <label className="flex flex-col gap-1 text-xs font-medium text-[#aab2c0]">
+            {livePathLabel}
+            <input
+              type="text"
+              value={livePathValue}
+              onChange={(e) => onLivePathChange(e.target.value)}
+              placeholder={livePathPlaceholder}
+              className="h-9 rounded-lg border border-[#2a2f3a] bg-[#171923] px-3 text-sm text-[#f3f4f6] outline-none transition placeholder:text-[#5d6675] focus:border-[#4b5568]"
+            />
+          </label>
+        ) : null}
+        {livePathHint ? (
+          <p className="text-[11px] leading-snug text-[#9ca3af]">
+            {livePathHint}
+          </p>
+        ) : null}
         {livePlaceholderMessage ? (
           <p className="text-xs leading-snug text-[#9ca3af]">
             {livePlaceholderMessage}
@@ -178,16 +202,18 @@ export function LogPanel({
 
       <div className="shrink-0 space-y-1.5 rounded-2xl border border-[#2a2f3a] bg-[#171923] p-2.5 shadow-lg shadow-black/20">
         <div className="mb-1.5">
-          <h2 className="text-sm font-semibold text-[#f3f4f6]">Logs</h2>
+          <h2 className="text-sm font-semibold text-[#f3f4f6]">
+            {labels.logs}
+          </h2>
           <p className="mt-0.5 text-xs text-[#9ca3af]">
-            Paste console lines, then Process
+            {labels.logsHint}
           </p>
         </div>
         <textarea
           rows={1}
           value={logText}
           onChange={(e) => onLogTextChange(e.target.value)}
-          placeholder="Paste debug console lines here..."
+          placeholder={labels.logPlaceholder}
           className="w-full min-h-[40px] shrink-0 resize-none rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-1.5 text-xs text-[#f3f4f6] placeholder:text-[#6b7280] focus:border-violet-500/50 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
         />
 
@@ -197,14 +223,14 @@ export function LogPanel({
             onClick={onClearLogs}
             className="rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-1 text-xs font-medium text-[#e5e7eb] transition hover:border-[#3d4554] hover:bg-[#232736]"
           >
-            Clear logs
+            {labels.clearLogs}
           </button>
           <button
             type="button"
             onClick={onResetSession}
             className="rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-1 text-xs font-medium text-[#e5e7eb] transition hover:border-amber-500/35 hover:bg-amber-500/10"
           >
-            Reset session
+            {labels.resetSession}
           </button>
         </div>
 
@@ -214,7 +240,7 @@ export function LogPanel({
           onClick={onProcess}
           className="w-full shrink-0 rounded-xl border border-violet-500/40 bg-violet-600/20 px-3 py-1.5 text-xs font-medium text-violet-100 transition hover:bg-violet-600/30 focus:outline-none focus:ring-2 focus:ring-violet-500/30 disabled:cursor-not-allowed disabled:opacity-45"
         >
-          Process
+          {labels.process}
         </button>
 
         {processMessage ? (

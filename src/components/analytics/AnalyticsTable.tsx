@@ -14,24 +14,45 @@ export type AnalyticsTableProps = {
   eventGroupTabs?: ReactNode;
   /** True when a file was loaded but produced zero spec rows. */
   isEmptyImport: boolean;
-  /** When rows come from a real file import (vs mock preview). */
+  /** True after a real file import. */
   isImported: boolean;
+  labels: {
+    events: string;
+    imported: string;
+    status: string;
+    event: string;
+    value: string;
+    description: string;
+    noSpecLoaded: string;
+    noRowsParsed: string;
+    noRowsParsedHint: string;
+    statuses: {
+      passed: string;
+      partial: string;
+      duplicate: string;
+      unknown: string;
+      notChecked: string;
+    };
+  };
 };
 
-function translateStatusLabel(label: string): string {
+function translateStatusLabel(
+  label: string,
+  labels: AnalyticsTableProps["labels"],
+): string {
   switch (label.toLowerCase()) {
     case "passed":
     case "matched":
-      return "Passed";
+      return labels.statuses.passed;
     case "partial":
-      return "Partial";
+      return labels.statuses.partial;
     case "duplicate":
-      return "Duplicate";
+      return labels.statuses.duplicate;
     case "unknown":
-      return "Unknown";
+      return labels.statuses.unknown;
     case "not checked":
     case "not_checked":
-      return "Not checked";
+      return labels.statuses.notChecked;
     default:
       return label;
   }
@@ -46,6 +67,7 @@ export function AnalyticsTable({
   eventGroupTabs,
   isEmptyImport,
   isImported,
+  labels,
 }: AnalyticsTableProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const highlightedRowIdSet = new Set(highlightedRowIds);
@@ -61,32 +83,30 @@ export function AnalyticsTable({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#2a2f3a] bg-[#1c1f2a] shadow-lg shadow-black/25">
       <div className="shrink-0 border-b border-[#2a2f3a] px-4 py-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-[#f3f4f6]">Events</h2>
+          <h2 className="text-sm font-medium text-[#f3f4f6]">
+            {labels.events}
+          </h2>
           {isImported ? (
             <span className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-200">
-              Imported
+              {labels.imported}
             </span>
-          ) : (
-            <span className="text-[10px] font-medium uppercase tracking-wide text-[#9ca3af]">
-              Mock preview
-            </span>
-          )}
+          ) : null}
         </div>
-        {!isImported && (
-          <p className="mt-1 text-xs text-[#9ca3af]">
-            Upload a spec file in the sidebar to replace this sample data.
-          </p>
-        )}
         {eventGroupTabs ? <div className="mt-3">{eventGroupTabs}</div> : null}
       </div>
 
       <div ref={scrollRef} className="h-full min-h-0 flex-1 overflow-auto">
-        {isEmptyImport ? (
+        {!isImported ? (
           <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
-            <p className="text-sm text-[#e5e7eb]">No rows parsed</p>
+            <p className="text-sm text-[#e5e7eb]">
+              {labels.noSpecLoaded}
+            </p>
+          </div>
+        ) : isEmptyImport ? (
+          <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+            <p className="text-sm text-[#e5e7eb]">{labels.noRowsParsed}</p>
             <p className="max-w-sm text-xs text-[#9ca3af]">
-              The file was read, but no meaningful rows were found. Try another
-              sheet or check that cells are not all empty.
+              {labels.noRowsParsedHint}
             </p>
           </div>
         ) : (
@@ -94,16 +114,16 @@ export function AnalyticsTable({
             <thead className="sticky top-0 z-10 bg-[#1c1f2a]/95 backdrop-blur-sm">
               <tr className="border-b border-[#2a2f3a]">
                 <th className={`${thClass} pl-4`} scope="col">
-                  Status
+                  {labels.status}
                 </th>
                 <th className={thClass} scope="col">
-                  Event
+                  {labels.event}
                 </th>
                 <th className={thClass} scope="col">
-                  Value
+                  {labels.value}
                 </th>
                 <th className={`${thClass} pr-4`} scope="col">
-                  Description
+                  {labels.description}
                 </th>
               </tr>
             </thead>
@@ -136,7 +156,7 @@ export function AnalyticsTable({
                       <span className="inline-flex items-center gap-2">
                         <StatusDot variant={row.dotStatus} />
                         <span className="text-[#d1d5db]">
-                          {translateStatusLabel(row.statusLabel)}
+                          {translateStatusLabel(row.statusLabel, labels)}
                         </span>
                       </span>
                     </td>
