@@ -19,23 +19,37 @@ export type MatcherStats = {
   logStats: LogStats;
 };
 
-function isNotCheckedRow(r: AnalyticsSpecRow): boolean {
-  return (
-    r.status === "not_checked" ||
-    r.status === "pending" ||
-    r.status === "unmatched" ||
-    r.status === "error"
-  );
-}
-
 export function computeStats(
   rows: AnalyticsSpecRow[],
   logs: ParsedLogEntry[],
 ): MatcherStats {
   const total = rows.length;
-  const passed = rows.filter((r) => r.status === "matched").length;
-  const partial = rows.filter((r) => r.status === "partial").length;
-  const notChecked = rows.filter(isNotCheckedRow).length;
+  const knownRowIds = new Set(rows.map((r) => r.id));
+  const passedRowIds = new Set(
+    rows.filter((r) => r.status === "matched").map((r) => r.id),
+  );
+  const partialRowIds = new Set(
+    rows.filter((r) => r.status === "partial").map((r) => r.id),
+  );
+
+  for (const log of logs) {
+    if (!log.matchedRowId || !knownRowIds.has(log.matchedRowId)) {
+      continue;
+    }
+    if (log.matchType === "passed") {
+      passedRowIds.add(log.matchedRowId);
+      partialRowIds.delete(log.matchedRowId);
+    } else if (
+      log.matchType === "partial" &&
+      !passedRowIds.has(log.matchedRowId)
+    ) {
+      partialRowIds.add(log.matchedRowId);
+    }
+  }
+
+  const passed = passedRowIds.size;
+  const partial = partialRowIds.size;
+  const notChecked = Math.max(0, total - passed - partial);
 
   const totalLogs = logs.length;
   const duplicateLogs = logs.filter((l) => l.matchType === "duplicate").length;

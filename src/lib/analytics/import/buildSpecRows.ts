@@ -97,13 +97,17 @@ export function buildSpecRows(
         description: desc,
         value,
         sheetRowIndex,
+        sourceRowNumber: sheetRowIndex + 1,
         level,
       },
       status: "not_checked",
       meta: {
         sheetRowIndex,
+        sourceRowNumber: sheetRowIndex + 1,
         level,
         fullPath: newPath.join("."),
+        sourcePathColumns: hierarchyForSpec,
+        rawRow: [...hr.rawRow],
       },
     });
   }

@@ -2,9 +2,7 @@ import os from "os";
 import path from "path";
 
 export const defaultUnityEditorLogPath = path.join(
-  os.homedir(),
-  "AppData",
-  "Local",
+  process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
   "Unity",
   "Editor",
   "Editor.log",

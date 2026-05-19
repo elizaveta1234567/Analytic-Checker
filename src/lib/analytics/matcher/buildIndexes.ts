@@ -42,7 +42,9 @@ export function buildRowMap(rows: AnalyticsSpecRow[]): Map<string, AnalyticsSpec
     const sv = specValue(row);
     const vk = sv !== null ? normalizeValue(sv) : "";
     const key = makeRowKey(ep, vk || null);
-    map.set(key, row);
+    if (!map.has(key)) {
+      map.set(key, row);
+    }
   }
   return map;
 }

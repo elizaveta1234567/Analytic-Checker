@@ -17,6 +17,10 @@
 
 # production
 /build
+/dist/
+/release/
+*.exe
+*.blockmap
 
 # misc
 .DS_Store

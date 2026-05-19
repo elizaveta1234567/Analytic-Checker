@@ -32,6 +32,8 @@ export type ParsedLogEntry = {
   raw: string;
   /** Payload after extractAnalyticsPayload (null if not extracted here). */
   extracted: string | null;
+  /** Candidate after legacy/dotted event-name normalization, before matching. */
+  normalizedEventName?: string | null;
   /** Normalized / resolved event path when known. */
   eventPath: string | null;
   /** Normalized remainder (value segment) when resolved. */
@@ -40,6 +42,8 @@ export type ParsedLogEntry = {
   matchType: "passed" | "duplicate" | "partial" | "unknown";
   matchedRowId: string | null;
   reason: string | null;
+  analyticsType?: string | null;
+  analyticsSource?: string | null;
 };
 
 /** Session aggregates import + logs + matcher results. */

@@ -8,6 +8,8 @@ export {
   buildSpecRows,
   extractHierarchyRows,
   importSpec,
+  importSpecFromArrayBuffer,
+  importSpecFromCsvText,
   normalizeCell,
   parseWorkbookToMatrix,
 } from "./import";
@@ -18,6 +20,7 @@ export type {
 } from "./import";
 export {
   applyMatchToRows,
+  analyticsEventNormalizationManualChecks,
   buildEventPathIndex,
   buildMatcherIndexes,
   buildRowMap,
@@ -26,13 +29,16 @@ export {
   makeRowKey,
   matchLogLinesAgainstSpec,
   matchPayload,
+  normalizeAnalyticsEventCandidate,
   normalizeValue,
   validateExtractedPayload,
 } from "./matcher";
 export type {
+  AnalyticsEventFormat,
   LogStats,
   MatcherIndexes,
   MatcherStats,
   MatchPayloadResult,
+  NormalizedAnalyticsEventCandidate,
   RowStats,
 } from "./matcher";

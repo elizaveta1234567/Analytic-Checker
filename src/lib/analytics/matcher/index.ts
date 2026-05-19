@@ -10,6 +10,12 @@ export {
 export type { MatchPayloadResult } from "./matchLogs";
 export { normalizeValue } from "./normalize";
 export {
+  analyticsEventNormalizationManualChecks,
   extractAnalyticsPayload,
+  normalizeAnalyticsEventCandidate,
   validateExtractedPayload,
+} from "./parseLogs";
+export type {
+  AnalyticsEventFormat,
+  NormalizedAnalyticsEventCandidate,
 } from "./parseLogs";

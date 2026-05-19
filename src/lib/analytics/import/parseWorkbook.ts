@@ -3,8 +3,14 @@ import * as XLSX from "xlsx";
 export type ParseWorkbookDebug = {
   sheetNames: string[];
   usedSheetName: string;
+  requestedSheetName?: string | null;
+  sheetFound?: boolean;
   matrixRowCount: number;
   matrixColCount: number;
+};
+
+export type ParseWorkbookOptions = {
+  sheetName?: string | null;
 };
 
 /**
@@ -34,18 +40,46 @@ function rectangularizeBooleans(rows: boolean[][], width: number): boolean[][] {
   });
 }
 
+function findWorkbookSheetName(
+  sheetNames: string[],
+  requestedSheetName: string | null,
+): string | null {
+  const requested = requestedSheetName?.trim();
+  if (!requested) {
+    return sheetNames[0] ?? null;
+  }
+
+  return (
+    sheetNames.find((sheetName) => sheetName === requested) ??
+    sheetNames.find((sheetName) => sheetName.trim() === requested) ??
+    null
+  );
+}
+
 /**
- * Reads the first worksheet from an .xlsx / .xls / .csv buffer into a string matrix.
+ * Reads a worksheet from an .xlsx / .xls / .csv buffer into a string matrix.
  */
-export function parseWorkbookToMatrix(data: ArrayBuffer): {
+export function parseWorkbookToMatrix(
+  data: ArrayBuffer | string,
+  options: ParseWorkbookOptions = {},
+): {
   matrix: string[][];
   checkboxMatrix: boolean[][];
   debug: ParseWorkbookDebug;
 } {
-  const workbook = XLSX.read(data, { type: "array", cellDates: false });
+  const workbook = XLSX.read(data, {
+    type: typeof data === "string" ? "string" : "array",
+    cellDates: false,
+  });
   const sheetNames = workbook.SheetNames;
-  const usedSheetName = sheetNames[0] ?? "";
-  const sheet = workbook.Sheets[usedSheetName];
+  const requestedSheetName = options.sheetName?.trim() || null;
+  const selectedSheetName = findWorkbookSheetName(
+    sheetNames,
+    requestedSheetName,
+  );
+  const usedSheetName = selectedSheetName ?? requestedSheetName ?? "";
+  const sheet = selectedSheetName ? workbook.Sheets[selectedSheetName] : null;
+  const sheetFound = Boolean(sheet);
 
   if (!sheet) {
     return {
@@ -54,44 +88,46 @@ export function parseWorkbookToMatrix(data: ArrayBuffer): {
       debug: {
         sheetNames,
         usedSheetName,
+        requestedSheetName,
+        sheetFound,
         matrixRowCount: 0,
         matrixColCount: 0,
       },
     };
   }
 
-  const raw = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(
-    sheet,
-    {
-      header: 1,
-      defval: "",
-      raw: false,
-    },
-  );
-
-  const rawValues = XLSX.utils.sheet_to_json<
-    (string | number | boolean | null)[]
-  >(sheet, {
-    header: 1,
-    defval: "",
-    raw: true,
-  });
-
   const normalized: string[][] = [];
   const checkboxRows: boolean[][] = [];
-  const rowCount = Math.max(raw.length, rawValues.length);
+  const ref = sheet["!ref"];
+  if (!ref) {
+    return {
+      matrix: [],
+      checkboxMatrix: [],
+      debug: {
+        sheetNames,
+        usedSheetName,
+        requestedSheetName,
+        sheetFound,
+        matrixRowCount: 0,
+        matrixColCount: 0,
+      },
+    };
+  }
+
+  const range = XLSX.utils.decode_range(ref);
+  const rowCount = range.e.r + 1;
+  const colCount = range.e.c + 1;
 
   for (let r = 0; r < rowCount; r++) {
-    const displayRow = Array.isArray(raw[r]) ? raw[r] : [];
-    const rawRow = Array.isArray(rawValues[r]) ? rawValues[r] : [];
-    const colCount = Math.max(displayRow.length, rawRow.length);
     const normalizedRow: string[] = [];
     const checkboxRow: boolean[] = [];
 
     for (let c = 0; c < colCount; c++) {
-      const rawCell = rawRow[c];
+      const cellAddress = XLSX.utils.encode_cell({ r, c });
+      const cell = sheet[cellAddress];
+      const rawCell = cell?.v ?? "";
       const isBooleanCell = typeof rawCell === "boolean";
-      let normalizedCell = normalizeCell(displayRow[c]);
+      let normalizedCell = normalizeCell(cell?.w ?? rawCell);
       if (isBooleanCell) {
         normalizedCell = rawCell ? "TRUE" : "FALSE";
       }
@@ -116,6 +152,8 @@ export function parseWorkbookToMatrix(data: ArrayBuffer): {
     debug: {
       sheetNames,
       usedSheetName,
+      requestedSheetName,
+      sheetFound,
       matrixRowCount: matrix.length,
       matrixColCount,
     },

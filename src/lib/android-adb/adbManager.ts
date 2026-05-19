@@ -1,11 +1,27 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
+import { spawn, type ChildProcessByStdio } from "child_process";
+import { existsSync } from "fs";
 import * as readline from "readline";
+import type { Readable } from "stream";
 import { packageName } from "./adbConfig";
 import { normalizeAdbLogLine } from "./logParser";
 import { isAdbPathResolutionError, resolveAdbPath } from "./resolveAdbPath";
 import { streamState } from "./streamState";
 
-const globalAny = globalThis as any;
+type AdbManager = {
+  detectForegroundPackageName(): Promise<string>;
+  start(packageNameOverride?: string): Promise<void>;
+  stop(): void;
+  isRunning(): boolean;
+  getBufferedLogs(): string[];
+  subscribe(listener: (line: string) => void): void;
+  unsubscribe(listener: (line: string) => void): void;
+};
+
+const globalState = globalThis as typeof globalThis & {
+  __adbManager?: AdbManager;
+};
+
+type PipedAdbProcess = ChildProcessByStdio<null, Readable, Readable>;
 
 const foregroundPackageDetectionFailedMessage =
   "Could not detect foreground Android package. Make sure the app is open on device.";
@@ -42,11 +58,27 @@ function isAdbDeviceError(message: string): boolean {
   );
 }
 
+function spawnAdb(args: readonly string[]): PipedAdbProcess {
+  let adbPath: string;
+  try {
+    adbPath = resolveAdbPath();
+  } catch (e) {
+    console.log("[adbManager] selected adb path: <not found>");
+    console.log("[adbManager] exists=false");
+    console.log(`[adbManager] cwd=${process.cwd()}`);
+    throw e;
+  }
+  console.log("[adbManager] selected adb path:", adbPath);
+  console.log(`[adbManager] exists=${existsSync(adbPath)}`);
+  console.log(`[adbManager] cwd=${process.cwd()}`);
+  return spawn(adbPath, [...args], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
 function runAdbCommand(args: readonly string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(resolveAdbPath(), [...args], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const child = spawnAdb(args);
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
@@ -130,20 +162,14 @@ async function detectForegroundPackageName(): Promise<string> {
   throw new Error(foregroundPackageDetectionFailedMessage);
 }
 
-if (!globalAny.__adbManager) {
-  let logcatChild: ChildProcessWithoutNullStreams | null = null;
+if (!globalState.__adbManager) {
+  let logcatChild: PipedAdbProcess | null = null;
   let logcatReadline: readline.Interface | null = null;
   let startInFlight = false;
 
   function getPidOf(effectivePackageName: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = spawn(
-        resolveAdbPath(),
-        ["shell", "pidof", "-s", effectivePackageName],
-        {
-          stdio: ["ignore", "pipe", "pipe"],
-        },
-      );
+      const child = spawnAdb(["shell", "pidof", "-s", effectivePackageName]);
       let stdout = "";
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
@@ -170,7 +196,7 @@ if (!globalAny.__adbManager) {
     streamState.setRunning(false);
   }
 
-  globalAny.__adbManager = {
+  globalState.__adbManager = {
     detectForegroundPackageName,
 
     async start(packageNameOverride?: string): Promise<void> {
@@ -188,9 +214,7 @@ if (!globalAny.__adbManager) {
         console.log("[adbManager] pid:", pid);
         console.log("[adbManager] starting logcat for pid", pid);
 
-        const child = spawn(resolveAdbPath(), ["logcat", `--pid=${pid}`], {
-          stdio: ["ignore", "pipe", "pipe"],
-        });
+        const child = spawnAdb(["logcat", `--pid=${pid}`]);
 
         child.stderr.setEncoding("utf8");
         child.stderr.on("data", (chunk: string) => {
@@ -252,8 +276,8 @@ if (!globalAny.__adbManager) {
     },
   };
 } else {
-  globalAny.__adbManager.detectForegroundPackageName =
+  globalState.__adbManager.detectForegroundPackageName =
     detectForegroundPackageName;
 }
 
-export const adbManager = globalAny.__adbManager;
+export const adbManager = globalState.__adbManager as AdbManager;

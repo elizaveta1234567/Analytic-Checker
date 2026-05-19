@@ -45,6 +45,16 @@ export type LogPanelProps = {
   onLivePathChange?: (value: string) => void;
   livePathPlaceholder?: string;
   livePathHint?: string;
+  liveShowAllLinesLabel?: string;
+  liveShowAllLinesChecked?: boolean;
+  onLiveShowAllLinesChange?: (value: boolean) => void;
+  manualEventLabel?: string;
+  manualEventValue?: string;
+  manualEventPlaceholder?: string;
+  manualEventProcessLabel?: string;
+  manualEventProcessDisabled?: boolean;
+  onManualEventChange?: (value: string) => void;
+  onManualEventProcess?: () => void;
   labels: {
     logs: string;
     logsHint: string;
@@ -100,8 +110,25 @@ export function LogPanel({
   onLivePathChange,
   livePathPlaceholder,
   livePathHint,
+  liveShowAllLinesLabel,
+  liveShowAllLinesChecked = false,
+  onLiveShowAllLinesChange,
+  manualEventLabel,
+  manualEventValue = "",
+  manualEventPlaceholder,
+  manualEventProcessLabel,
+  manualEventProcessDisabled = false,
+  onManualEventChange,
+  onManualEventProcess,
   labels,
 }: LogPanelProps) {
+  const showManualEventInput =
+    Boolean(manualEventLabel) &&
+    Boolean(onManualEventChange) &&
+    Boolean(onManualEventProcess);
+  const showLiveShowAllLinesToggle =
+    Boolean(liveShowAllLinesLabel) && Boolean(onLiveShowAllLinesChange);
+
   return (
     <aside className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overflow-x-hidden pr-1">
       <div className="flex min-h-[300px] flex-1 flex-col space-y-2 rounded-2xl border border-[#2a2f3a] bg-[#171923] p-4 shadow-lg shadow-black/20">
@@ -114,7 +141,7 @@ export function LogPanel({
               type="button"
               disabled={liveClearDisabled}
               onClick={onAndroidClearLive}
-              className="rounded-md border border-[#2a2f3a] bg-[#171923] px-2 py-0.5 text-[10px] font-medium text-[#d1d5db] transition hover:border-[#3d4554] hover:bg-[#232736] disabled:cursor-not-allowed disabled:opacity-45"
+              className="ui-btn ui-btn-ghost ui-btn-xs"
             >
               {clearLiveLabel}
             </button>
@@ -132,7 +159,7 @@ export function LogPanel({
             type="button"
             disabled={androidConnectDisabled}
             onClick={onAndroidConnect}
-            className="rounded-xl border border-emerald-500/40 bg-emerald-600/15 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-emerald-600/25 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-45"
+            className="ui-btn ui-btn-primary ui-btn-full"
           >
             {connectLabel}
           </button>
@@ -140,7 +167,7 @@ export function LogPanel({
             type="button"
             disabled={androidStopDisabled}
             onClick={onAndroidStop}
-            className="rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-2 text-xs font-medium text-[#e5e7eb] transition hover:border-red-500/35 hover:bg-red-500/10 focus:outline-none focus:ring-2 focus:ring-red-500/25 disabled:cursor-not-allowed disabled:opacity-45"
+            className="ui-btn ui-btn-danger ui-btn-full"
           >
             {stopLabel}
           </button>
@@ -161,6 +188,41 @@ export function LogPanel({
           <p className="text-[11px] leading-snug text-[#9ca3af]">
             {livePathHint}
           </p>
+        ) : null}
+        {showLiveShowAllLinesToggle ? (
+          <label className="flex items-center gap-2 text-[11px] font-medium text-[#aab2c0]">
+            <input
+              type="checkbox"
+              checked={liveShowAllLinesChecked}
+              onChange={(e) =>
+                onLiveShowAllLinesChange?.(e.target.checked)
+              }
+              className="h-4 w-4 rounded border-[#3d4554] bg-[#171923] accent-violet-500"
+            />
+            <span>{liveShowAllLinesLabel}</span>
+          </label>
+        ) : null}
+        {showManualEventInput ? (
+          <div className="grid gap-1.5 rounded-lg border border-[#2a2f3a] bg-[#11131a]/65 p-2">
+            <label className="flex flex-col gap-1 text-xs font-medium text-[#aab2c0]">
+              {manualEventLabel}
+              <textarea
+                rows={2}
+                value={manualEventValue}
+                onChange={(e) => onManualEventChange?.(e.target.value)}
+                placeholder={manualEventPlaceholder}
+                className="min-h-[48px] resize-none rounded-lg border border-[#2a2f3a] bg-[#171923] px-3 py-2 font-mono text-xs text-[#f3f4f6] outline-none transition placeholder:text-[#5d6675] focus:border-violet-500/50"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={manualEventProcessDisabled}
+              onClick={onManualEventProcess}
+              className="ui-btn ui-btn-primary ui-btn-full ui-btn-sm"
+            >
+              {manualEventProcessLabel ?? labels.process}
+            </button>
+          </div>
         ) : null}
         {livePlaceholderMessage ? (
           <p className="text-xs leading-snug text-[#9ca3af]">
@@ -221,14 +283,14 @@ export function LogPanel({
           <button
             type="button"
             onClick={onClearLogs}
-            className="rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-1 text-xs font-medium text-[#e5e7eb] transition hover:border-[#3d4554] hover:bg-[#232736]"
+            className="ui-btn ui-btn-secondary ui-btn-sm ui-btn-full"
           >
             {labels.clearLogs}
           </button>
           <button
             type="button"
             onClick={onResetSession}
-            className="rounded-xl border border-[#2a2f3a] bg-[#1c1f2a] px-3 py-1 text-xs font-medium text-[#e5e7eb] transition hover:border-amber-500/35 hover:bg-amber-500/10"
+            className="ui-btn ui-btn-ghost ui-btn-sm ui-btn-full"
           >
             {labels.resetSession}
           </button>
@@ -238,7 +300,7 @@ export function LogPanel({
           type="button"
           disabled={processDisabled}
           onClick={onProcess}
-          className="w-full shrink-0 rounded-xl border border-violet-500/40 bg-violet-600/20 px-3 py-1.5 text-xs font-medium text-violet-100 transition hover:bg-violet-600/30 focus:outline-none focus:ring-2 focus:ring-violet-500/30 disabled:cursor-not-allowed disabled:opacity-45"
+          className="ui-btn ui-btn-primary ui-btn-full shrink-0"
         >
           {labels.process}
         </button>

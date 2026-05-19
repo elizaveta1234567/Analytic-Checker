@@ -155,7 +155,10 @@ export async function exportCheckedWorkbook({
   }
 
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(originalWorkbook as unknown as Buffer);
+  const xlsxLoader = workbook.xlsx as unknown as {
+    load(buffer: ArrayBuffer): Promise<unknown>;
+  };
+  await xlsxLoader.load(originalWorkbook);
 
   const worksheet = workbook.getWorksheet(usedSheetName);
   if (!worksheet) {

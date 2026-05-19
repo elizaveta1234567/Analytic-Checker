@@ -9,6 +9,7 @@ export type TableRowModel = {
   event: string;
   value: string | null;
   description: string;
+  analyticsType?: string | null;
 };
 
 export function formatSpecStatus(status: AnalyticsSpecRow["status"]): string {
@@ -67,5 +68,12 @@ export function specToTableRowModel(row: AnalyticsSpecRow): TableRowModel {
     event,
     value,
     description: String(row.cells.description ?? ""),
+    analyticsType: String(
+      row.cells.analyticsType ??
+        row.cells.analyticsSource ??
+        row.meta?.analyticsType ??
+        row.meta?.analyticsSource ??
+        "",
+    ) || null,
   };
 }

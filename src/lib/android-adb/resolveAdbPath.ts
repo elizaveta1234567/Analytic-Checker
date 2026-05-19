@@ -1,8 +1,10 @@
 import { existsSync } from "fs";
 import * as path from "path";
 
-const androidAdbPathEnv = "ANDROID_ADB_PATH";
-const adbExecutableName = "adb.exe";
+const adbPathEnv = "ADB_PATH";
+const adbExecutableName = process.platform === "win32" ? "adb.exe" : "adb";
+const adbNotFoundMessage =
+  "adb.exe was not found. Expected it in ./platform-tools/adb.exe or resources/platform-tools/adb.exe";
 
 function stripOuterQuotes(value: string): string {
   return value.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
@@ -17,32 +19,81 @@ function electronResourcesPath(): string | null {
 }
 
 export function isAdbPathResolutionError(message: string): boolean {
-  return message.startsWith(`${androidAdbPathEnv} is set but`);
+  return message.startsWith(adbNotFoundMessage);
+}
+
+function resolveAdbFromPath(checkedPaths: string[]): string | null {
+  const pathValue = process.env.PATH ?? process.env.Path ?? "";
+  if (!pathValue.trim()) {
+    checkedPaths.push("PATH=<empty>");
+    return null;
+  }
+
+  for (const rawDirectory of pathValue.split(path.delimiter)) {
+    const directory = stripOuterQuotes(rawDirectory.trim());
+    if (!directory) {
+      continue;
+    }
+
+    const adbPath = path.join(directory, adbExecutableName);
+    checkedPaths.push(`PATH=${adbPath}`);
+    if (existsSync(adbPath)) {
+      return adbPath;
+    }
+  }
+
+  return null;
+}
+
+function buildAdbNotFoundError(checkedPaths: string[]): Error {
+  return new Error(
+    `${adbNotFoundMessage}. Checked paths: ${checkedPaths.join("; ")}`,
+  );
 }
 
 export function resolveAdbPath(): string {
-  const envPath = process.env[androidAdbPathEnv]?.trim();
+  const checkedPaths: string[] = [];
+  const envPath = process.env[adbPathEnv]?.trim();
   if (envPath) {
     const adbPath = stripOuterQuotes(envPath);
-    if (!existsSync(adbPath)) {
-      throw new Error(
-        `${androidAdbPathEnv} is set but adb executable was not found: ${adbPath}`,
-      );
+    checkedPaths.push(`${adbPathEnv}=${adbPath}`);
+    if (existsSync(adbPath)) {
+      return adbPath;
     }
-    return adbPath;
+  } else {
+    checkedPaths.push(`${adbPathEnv}=<not set>`);
   }
 
   const resourcesPath = electronResourcesPath();
+  let resourcesAdbPath: string | null = null;
   if (resourcesPath) {
-    const bundledAdbPath = path.join(
+    resourcesAdbPath = path.join(
       resourcesPath,
       "platform-tools",
       adbExecutableName,
     );
-    if (existsSync(bundledAdbPath)) {
-      return bundledAdbPath;
+    checkedPaths.push(`resources=${resourcesAdbPath}`);
+    if (existsSync(resourcesAdbPath)) {
+      return resourcesAdbPath;
     }
+  } else {
+    checkedPaths.push("resources=<not available>");
   }
 
-  return "adb";
+  const devAdbPath = path.join(
+    process.cwd(),
+    "platform-tools",
+    adbExecutableName,
+  );
+  checkedPaths.push(`dev=${devAdbPath}`);
+  if (existsSync(devAdbPath)) {
+    return devAdbPath;
+  }
+
+  const pathAdbPath = resolveAdbFromPath(checkedPaths);
+  if (pathAdbPath) {
+    return pathAdbPath;
+  }
+
+  throw buildAdbNotFoundError(checkedPaths);
 }

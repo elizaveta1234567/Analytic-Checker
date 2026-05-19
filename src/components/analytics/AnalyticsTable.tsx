@@ -148,25 +148,52 @@ export function AnalyticsTable({
                       highlighted
                         ? "border-emerald-400/45 bg-emerald-500/[0.12] ring-1 ring-inset ring-emerald-400/20"
                         : selected
-                        ? "bg-violet-500/10 ring-1 ring-inset ring-violet-500/25"
-                        : "border-[#2a2f3a]/80 hover:bg-[#232736]/90",
+                          ? "border-[var(--row-border)] bg-[var(--row-selected-bg)] text-[var(--row-selected-text)] ring-1 ring-inset ring-violet-500/25"
+                          : "border-[var(--row-border)] hover:bg-[var(--row-hover-bg)]",
                     ].join(" ")}
                   >
                     <td className="px-3 py-2.5 pl-4 align-middle">
                       <span className="inline-flex items-center gap-2">
                         <StatusDot variant={row.dotStatus} />
-                        <span className="text-[#d1d5db]">
+                        <span
+                          className={
+                            selected
+                              ? "text-[var(--row-selected-text)]"
+                              : "text-[#d1d5db]"
+                          }
+                        >
                           {translateStatusLabel(row.statusLabel, labels)}
                         </span>
                       </span>
                     </td>
                     <td className="px-3 py-2.5 align-middle font-mono text-[13px] text-violet-200/95">
-                      {row.event}
+                      <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="min-w-0 break-all">{row.event}</span>
+                        {row.analyticsType ? (
+                          <span className="shrink-0 rounded border border-sky-400/35 bg-sky-500/10 px-1.5 py-0.5 font-sans text-[9px] font-semibold uppercase tracking-wide text-sky-200">
+                            {row.analyticsType}
+                          </span>
+                        ) : null}
+                      </span>
                     </td>
-                    <td className="max-w-[140px] truncate px-3 py-2.5 align-middle font-mono text-[12px] text-[#9ca3af]">
+                    <td
+                      className={[
+                        "max-w-[140px] truncate px-3 py-2.5 align-middle font-mono text-[12px]",
+                        selected
+                          ? "text-[var(--row-selected-text)]"
+                          : "text-[#9ca3af]",
+                      ].join(" ")}
+                    >
                       {row.value ?? "—"}
                     </td>
-                    <td className="px-3 py-2.5 pr-4 align-middle text-[#9ca3af]">
+                    <td
+                      className={[
+                        "px-3 py-2.5 pr-4 align-middle",
+                        selected
+                          ? "text-[var(--row-selected-text)]"
+                          : "text-[#9ca3af]",
+                      ].join(" ")}
+                    >
                       {row.description}
                     </td>
                   </tr>

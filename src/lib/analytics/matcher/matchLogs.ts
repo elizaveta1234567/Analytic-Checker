@@ -5,7 +5,11 @@ import {
   type MatcherIndexes,
 } from "./buildIndexes";
 import { normalizeValue } from "./normalize";
-import { extractAnalyticsPayload, validateExtractedPayload } from "./parseLogs";
+import {
+  extractAnalyticsPayload,
+  normalizeAnalyticsEventCandidate,
+  validateExtractedPayload,
+} from "./parseLogs";
 
 const CLICK_LIKE_DUPLICATE_WINDOW_MS = 250;
 const SOURCE_ORDER_DUPLICATE_WINDOW_EVENTS = 1;
@@ -89,7 +93,11 @@ export function matchPayload(
   rows: AnalyticsSpecRow[],
   idx: MatcherIndexes,
 ): MatchPayloadResult {
-  const N = normalizeValue(originalPayload);
+  const normalizedCandidate = normalizeAnalyticsEventCandidate(originalPayload);
+  const payload = normalizedCandidate.normalized;
+  const payloadForRawCompare =
+    normalizedCandidate.format === "legacy-comma" ? payload : originalPayload;
+  const N = normalizeValue(payload);
   if (!N) {
     return unknown("Empty payload");
   }
@@ -131,7 +139,10 @@ export function matchPayload(
   if (rowMap.has(directKey)) {
     const row = rowMap.get(directKey)!;
     const pathRaw = specEventPath(row);
-    const remRaw = extractRemainderCaseInsensitive(originalPayload, pathRaw);
+    const remRaw = extractRemainderCaseInsensitive(
+      payloadForRawCompare,
+      pathRaw,
+    );
     const vSpec = specValue(row) != null ? String(specValue(row)) : "";
     const normEq =
       normalizeValue(vSpec) === normalizeValue(remRaw) ||
@@ -169,7 +180,10 @@ export function matchPayload(
 
   if (valueMatch) {
     const pathRaw = specEventPath(valueMatch);
-    const remRaw = extractRemainderCaseInsensitive(originalPayload, pathRaw);
+    const remRaw = extractRemainderCaseInsensitive(
+      payloadForRawCompare,
+      pathRaw,
+    );
     const vSpec =
       specValue(valueMatch) != null ? String(specValue(valueMatch)) : "";
     const normEq = normalizeValue(vSpec) === normalizeValue(remRaw);
@@ -219,6 +233,7 @@ export function applyMatchToRows(
   rows: AnalyticsSpecRow[],
   log: ParsedLogEntry,
 ): void {
+  if (log.matchType === "duplicate") return;
   if (!log.matchedRowId) return;
   const row = rows.find((r) => r.id === log.matchedRowId);
   if (!row) return;
@@ -230,7 +245,7 @@ export function applyMatchToRows(
   if (row.firstMatchedAt == null) row.firstMatchedAt = t;
   row.lastMatchedAt = t;
 
-  if (log.matchType === "passed" || log.matchType === "duplicate") {
+  if (log.matchType === "passed") {
     row.status = "matched";
   } else if (log.matchType === "partial") {
     row.status = "partial";
@@ -348,7 +363,7 @@ function duplicateFingerprint(
   return [
     normalizeValue(result.eventPath),
     normalizeValue(result.value),
-    normalizeValue(extracted),
+    normalizeValue(normalizeAnalyticsEventCandidate(extracted).normalized),
   ].join("\0");
 }
 
@@ -356,7 +371,9 @@ function duplicateEventSignal(
   result: MatchPayloadResult,
   extracted: string,
 ): string {
-  return [result.eventPath ?? "", result.value ?? "", extracted]
+  const normalizedExtracted =
+    normalizeAnalyticsEventCandidate(extracted).normalized;
+  return [result.eventPath ?? "", result.value ?? "", normalizedExtracted]
     .map((part) => normalizeValue(part).replace(/[^a-z0-9]+/g, " "))
     .join(" ")
     .trim();
@@ -451,16 +468,27 @@ export function matchLogLinesAgainstSpec(
 
     const extracted = extractAnalyticsPayload(raw);
     if (extracted === null) return;
+    const normalizedCandidate = normalizeAnalyticsEventCandidate(extracted);
+    console.log(
+      `[eventNormalize] raw=${JSON.stringify(
+        normalizedCandidate.raw,
+      )} normalized=${JSON.stringify(normalizedCandidate.normalized)} format=${
+        normalizedCandidate.format
+      }`,
+    );
 
     eventSequence += 1;
     const sequenceIndex = eventSequence;
     const timestamp = resolveLogTimestamp(raw, baseTime + lineIndex, baseTime);
-    const payloadCheck = validateExtractedPayload(extracted);
+    const payloadCheck = validateExtractedPayload(
+      normalizedCandidate.normalized,
+    );
     if (!payloadCheck.valid) {
       logs.push({
         id: nextLogId(),
         raw,
         extracted,
+        normalizedEventName: normalizedCandidate.normalized,
         eventPath: null,
         value: null,
         timestamp: timestamp.value,
@@ -472,6 +500,11 @@ export function matchLogLinesAgainstSpec(
     }
 
     const m = matchPayload(extracted, rows, idx);
+    console.log(
+      `[matcher] raw=${JSON.stringify(extracted)} normalized=${JSON.stringify(
+        normalizedCandidate.normalized,
+      )} matchedRowId=${m.matchedRowId ?? "null"}`,
+    );
 
     let matchType = m.matchType;
     let reason = m.reason;
@@ -528,6 +561,7 @@ export function matchLogLinesAgainstSpec(
       id: nextLogId(),
       raw: raw,
       extracted,
+      normalizedEventName: normalizedCandidate.normalized,
       eventPath: m.eventPath,
       value: m.value,
       timestamp: timestamp.value,

@@ -1,4 +1,63 @@
 const ANALYTIC_MARKER = "Analytic report:";
+const EVENT_SEGMENT_RE = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/;
+
+export type AnalyticsEventFormat = "legacy-comma" | "dotted";
+
+export type NormalizedAnalyticsEventCandidate = {
+  raw: string;
+  normalized: string;
+  format: AnalyticsEventFormat;
+};
+
+function collapseDots(value: string): string {
+  return value.replace(/\.+/g, ".").replace(/^\./, "").replace(/\.$/, "");
+}
+
+function isLikelyLegacyCommaAnalyticsPayload(value: string): boolean {
+  if (!value.includes(",")) {
+    return false;
+  }
+  const segments = value
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return (
+    segments.length >= 2 &&
+    segments.every((segment) => EVENT_SEGMENT_RE.test(segment))
+  );
+}
+
+export function normalizeAnalyticsEventCandidate(
+  payload: string,
+): NormalizedAnalyticsEventCandidate {
+  const raw = payload.trim();
+  if (isLikelyLegacyCommaAnalyticsPayload(raw)) {
+    const normalized = collapseDots(
+      raw
+        .split(",")
+        .map((segment) => segment.trim())
+        .filter(Boolean)
+        .join("."),
+    );
+    return { raw, normalized, format: "legacy-comma" };
+  }
+  return { raw, normalized: collapseDots(raw), format: "dotted" };
+}
+
+export const analyticsEventNormalizationManualChecks = [
+  {
+    input: "subscription, first.time, subscription.impression2, close",
+    expected: "subscription.first.time.subscription.impression2.close",
+  },
+  {
+    input: "inapp, impression, wheels",
+    expected: "inapp.impression.wheels",
+  },
+  {
+    input: "subscription.first.time.step1.impression",
+    expected: "subscription.first.time.step1.impression",
+  },
+] as const;
 
 /**
  * Extracts analytics payload from a single console line, or null if not applicable.
@@ -11,6 +70,9 @@ export function extractAnalyticsPayload(rawLine: string): string | null {
   }
   const t = rawLine.trim();
   if (t.toLowerCase().startsWith("funnel.")) {
+    return t;
+  }
+  if (isLikelyLegacyCommaAnalyticsPayload(t)) {
     return t;
   }
   return null;

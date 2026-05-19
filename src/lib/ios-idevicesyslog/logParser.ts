@@ -4,7 +4,10 @@
  * matcher (extractAnalyticsPayload) and live UI stay compatible without syslog noise.
  */
 
-import { validateExtractedPayload } from "@/lib/analytics/matcher/parseLogs";
+import {
+  normalizeAnalyticsEventCandidate,
+  validateExtractedPayload,
+} from "@/lib/analytics/matcher/parseLogs";
 
 const ANALYTIC_MARKER = "Analytic report:";
 const CLIENT_EVENT_RECEIVED = "Client event is received:";
@@ -44,18 +47,30 @@ function stripFunnelPrefix(s: string): string {
  * Raw analytics tail: after Analytic report:, or from funnel., or a bare dot-path
  * (only when the remainder looks like a single event path token sequence).
  */
-function extractRawPayloadTail(working: string): string | null {
+function extractRawPayloadTail(
+  working: string,
+  allowBareLegacy = false,
+): string | null {
   const FUNNEL_PATH_RE = /\bfunnel\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+/i;
   const DOT_PATH_RE = /\b[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+/;
+  const LEGACY_COMMA_PATH_RE =
+    /\b[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*(?:\s*,\s*[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)+\b/;
 
   const reportIdx = working.indexOf(ANALYTIC_MARKER);
   if (reportIdx !== -1) {
     const rest = working.slice(reportIdx + ANALYTIC_MARKER.length).trim();
     if (rest === "") return null;
+    const legacy = rest.match(LEGACY_COMMA_PATH_RE);
+    if (legacy?.[0]) return legacy[0];
     const funnel = rest.match(FUNNEL_PATH_RE);
     if (funnel?.[0]) return funnel[0];
     const dot = rest.match(DOT_PATH_RE);
     return dot?.[0] ?? null;
+  }
+
+  if (allowBareLegacy) {
+    const legacy = working.match(LEGACY_COMMA_PATH_RE);
+    if (legacy?.[0]) return legacy[0];
   }
 
   const funnel = working.match(FUNNEL_PATH_RE);
@@ -74,12 +89,13 @@ function toCleanEventPath(raw: string): string | null {
   if (t === "") {
     return null;
   }
+  const normalized = normalizeAnalyticsEventCandidate(t).normalized;
   // Tighten acceptance to real event paths (prevents accidental UUID tail fragments, etc).
-  if (!/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/.test(t)) {
+  if (!/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/.test(normalized)) {
     return null;
   }
-  const check = validateExtractedPayload(t);
-  return check.valid ? t : null;
+  const check = validateExtractedPayload(normalized);
+  return check.valid ? normalized : null;
 }
 
 function formatCanonicalLine(eventPath: string): string {
@@ -125,7 +141,7 @@ export function normalizeIosLogLine(rawLine: string): string | null {
 
   working = stripLeadingBracketTags(working);
 
-  const rawTail = extractRawPayloadTail(working);
+  const rawTail = extractRawPayloadTail(working, hasClientReceived);
   if (rawTail === null) {
     return null;
   }

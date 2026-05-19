@@ -1,13 +1,27 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
+import { spawn, type ChildProcessByStdio } from "child_process";
 import * as readline from "readline";
+import type { Readable } from "stream";
 import { idevicesyslogPath, udid } from "./iosConfig";
 import { normalizeIosLogLine } from "./logParser";
 import { streamState } from "./streamState";
 
-const globalAny = globalThis as any;
+type IosManager = {
+  start(): Promise<void>;
+  stop(): void;
+  isRunning(): boolean;
+  getBufferedLogs(): string[];
+  subscribe(listener: (line: string) => void): void;
+  unsubscribe(listener: (line: string) => void): void;
+};
 
-if (!globalAny.__iosManager) {
-  let syslogChild: ChildProcessWithoutNullStreams | null = null;
+const globalState = globalThis as typeof globalThis & {
+  __iosManager?: IosManager;
+};
+
+type PipedSyslogProcess = ChildProcessByStdio<null, Readable, Readable>;
+
+if (!globalState.__iosManager) {
+  let syslogChild: PipedSyslogProcess | null = null;
   let syslogReadline: readline.Interface | null = null;
   let startInFlight = false;
 
@@ -72,7 +86,7 @@ if (!globalAny.__iosManager) {
     streamState.setRunning(false);
   }
 
-  globalAny.__iosManager = {
+  globalState.__iosManager = {
     async start(): Promise<void> {
       if (syslogChild !== null || startInFlight) {
         return;
@@ -176,4 +190,4 @@ if (!globalAny.__iosManager) {
   };
 }
 
-export const iosManager = globalAny.__iosManager;
+export const iosManager = globalState.__iosManager as IosManager;
