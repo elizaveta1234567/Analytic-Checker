@@ -55,6 +55,18 @@ export type LogPanelProps = {
   manualEventProcessDisabled?: boolean;
   onManualEventChange?: (value: string) => void;
   onManualEventProcess?: () => void;
+  lunarConsoleTitle?: string;
+  lunarConsoleValue?: string;
+  lunarConsolePlaceholder?: string;
+  lunarConsoleProcessLabel?: string;
+  lunarConsoleProcessDisabled?: boolean;
+  onLunarConsoleChange?: (value: string) => void;
+  onLunarConsoleProcess?: () => void;
+  lunarConsoleUploadLabel?: string;
+  lunarConsoleUploadHint?: string;
+  onLunarConsoleFileSelect?: (file: File) => void;
+  lunarConsoleRawPreviewLabel?: string;
+  lunarConsoleRawPreviewLines?: string[];
   labels: {
     logs: string;
     logsHint: string;
@@ -120,12 +132,28 @@ export function LogPanel({
   manualEventProcessDisabled = false,
   onManualEventChange,
   onManualEventProcess,
+  lunarConsoleTitle,
+  lunarConsoleValue = "",
+  lunarConsolePlaceholder,
+  lunarConsoleProcessLabel,
+  lunarConsoleProcessDisabled = false,
+  onLunarConsoleChange,
+  onLunarConsoleProcess,
+  lunarConsoleUploadLabel,
+  lunarConsoleUploadHint,
+  onLunarConsoleFileSelect,
+  lunarConsoleRawPreviewLabel,
+  lunarConsoleRawPreviewLines = [],
   labels,
 }: LogPanelProps) {
   const showManualEventInput =
     Boolean(manualEventLabel) &&
     Boolean(onManualEventChange) &&
     Boolean(onManualEventProcess);
+  const showLunarConsoleInput =
+    Boolean(lunarConsoleTitle) &&
+    Boolean(onLunarConsoleChange) &&
+    Boolean(onLunarConsoleProcess);
   const showLiveShowAllLinesToggle =
     Boolean(liveShowAllLinesLabel) && Boolean(onLiveShowAllLinesChange);
 
@@ -222,6 +250,79 @@ export function LogPanel({
             >
               {manualEventProcessLabel ?? labels.process}
             </button>
+          </div>
+        ) : null}
+        {showLunarConsoleInput ? (
+          <div className="grid gap-1.5 rounded-lg border border-[#2a2f3a] bg-[#11131a]/65 p-2">
+            <p className="text-xs font-semibold text-[#e5e7eb]">
+              {lunarConsoleTitle}
+            </p>
+            <label className="flex flex-col gap-1 text-xs font-medium text-[#aab2c0]">
+              <textarea
+                rows={3}
+                value={lunarConsoleValue}
+                onChange={(e) => onLunarConsoleChange?.(e.target.value)}
+                placeholder={lunarConsolePlaceholder}
+                className="min-h-[64px] resize-y rounded-lg border border-[#2a2f3a] bg-[#171923] px-3 py-2 font-mono text-xs text-[#f3f4f6] outline-none transition placeholder:text-[#5d6675] focus:border-violet-500/50"
+              />
+            </label>
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              <button
+                type="button"
+                disabled={lunarConsoleProcessDisabled}
+                onClick={onLunarConsoleProcess}
+                className="ui-btn ui-btn-primary ui-btn-full ui-btn-sm"
+              >
+                {lunarConsoleProcessLabel ?? labels.process}
+              </button>
+              {lunarConsoleUploadLabel && onLunarConsoleFileSelect ? (
+                <div className="flex flex-col gap-1">
+                  <label className="ui-btn ui-btn-secondary ui-btn-full ui-btn-sm cursor-pointer text-center">
+                    {lunarConsoleUploadLabel}
+                    <input
+                      type="file"
+                      accept=".txt,.log,text/plain"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          onLunarConsoleFileSelect(file);
+                        }
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {lunarConsoleUploadHint ? (
+                    <p className="text-[10px] leading-snug text-[#6b7280]">
+                      {lunarConsoleUploadHint}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            {lunarConsoleRawPreviewLabel ? (
+              <div className="flex min-h-0 flex-col space-y-1">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-[#6b7280]">
+                  {lunarConsoleRawPreviewLabel}
+                </p>
+                <ul className="max-h-[8rem] space-y-1 overflow-y-auto overflow-x-hidden rounded-lg border border-[#2a2f3a]/90 bg-[#171923]/80 px-2 py-2">
+                  {lunarConsoleRawPreviewLines.length === 0 ? (
+                    <li className="text-[10px] text-[#6b7280]">—</li>
+                  ) : (
+                    lunarConsoleRawPreviewLines.map((line, index) => (
+                      <li
+                        key={`${index}-${line.slice(0, 24)}`}
+                        className="border-b border-[#2a2f3a]/50 pb-1 last:border-b-0 last:pb-0"
+                      >
+                        <pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-[#d1d5db]">
+                          {line}
+                        </pre>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {livePlaceholderMessage ? (

@@ -37,6 +37,7 @@ import {
   type TableRowModel,
 } from "@/components/analytics/specRowDisplay";
 import { appBuildInfo } from "@/lib/buildInfo";
+import { parseIosLunarConsoleLogLine } from "@/lib/lunar-console/logParser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type AndroidLiveStatus =
@@ -46,6 +47,10 @@ type AndroidLiveStatus =
   | "error";
 
 type PlatformMode = "android" | "ios" | "unity";
+
+function platformUsesSdkEventGroupTabs(platform: PlatformMode): boolean {
+  return platform === "unity" || platform === "ios";
+}
 
 type AndroidEventGroupTabId =
   | "all"
@@ -331,6 +336,7 @@ type PlatformWorkspaceState = {
   matchBundle: MatchBundleState | null;
   logText: string;
   unityManualEventInput: string;
+  iosLunarConsoleInput: string;
   processMessage: string | null;
   activeSidebarFilter: SidebarFilter;
   activeEventGroupTab: EventGroupTabId;
@@ -550,6 +556,7 @@ function createDefaultPlatformWorkspaceState(): PlatformWorkspaceState {
     matchBundle: null,
     logText: "",
     unityManualEventInput: "",
+    iosLunarConsoleInput: "",
     processMessage: null,
     activeSidebarFilter: "all",
     activeEventGroupTab: "all",
@@ -1127,6 +1134,12 @@ const uiLabels = {
       startFailed: "iOS start failed",
       connectFailed: "iOS connect failed",
       liveDisconnected: "Live stream disconnected",
+      lunarConsoleTitle: "LunarConsole logs",
+      lunarConsolePlaceholder: "Paste LunarConsole log lines...",
+      lunarConsoleProcess: "Process logs",
+      lunarConsoleUpload: "Upload LunarConsole log",
+      lunarConsoleUploadHint: "Supports analytics_live.log from iOS dev build (AnalyticsLogBridge).",
+      lunarConsoleRawPreview: "Raw preview (last 100)",
     },
     unity: {
       liveTitle: "Unity Live",
@@ -1484,6 +1497,13 @@ const uiLabels = {
       startFailed: "Не удалось запустить iOS",
       connectFailed: "Не удалось подключить iOS",
       liveDisconnected: "Live-поток отключился",
+      lunarConsoleTitle: "LunarConsole logs",
+      lunarConsolePlaceholder: "Вставьте строки из LunarConsole...",
+      lunarConsoleProcess: "Обработать логи",
+      lunarConsoleUpload: "Загрузить LunarConsole log",
+      lunarConsoleUploadHint:
+        "Поддерживается analytics_live.log из iOS dev build (AnalyticsLogBridge).",
+      lunarConsoleRawPreview: "Raw preview (последние 100)",
     },
     unity: {
       liveTitle: "Unity лог",
@@ -1758,6 +1778,12 @@ const uiLabels = {
     startFailed: string;
     connectFailed: string;
     liveDisconnected: string;
+    lunarConsoleTitle: string;
+    lunarConsolePlaceholder: string;
+    lunarConsoleProcess: string;
+    lunarConsoleUpload: string;
+    lunarConsoleUploadHint: string;
+    lunarConsoleRawPreview: string;
   };
   unity: {
     liveTitle: string;
@@ -3607,7 +3633,10 @@ function parseUnityLiveStreamEntry(data: string): UnityLiveStreamEntry | null {
   }
 
   const analyticsLine =
-    extractLiveAnalyticsPayload(trimmed) !== null ? trimmed : null;
+    trimmed.includes("Analytic report:") &&
+    extractLiveAnalyticsPayload(trimmed) !== null
+      ? trimmed
+      : null;
   return {
     rawLine: trimmed,
     analyticsLine,
@@ -3659,7 +3688,7 @@ function isEventGroupTabAvailableForPlatform(
   activeGroup: EventGroupTabId,
   platform: PlatformMode,
 ): boolean {
-  return platform === "unity"
+  return platformUsesSdkEventGroupTabs(platform)
     ? isUnityEventGroupTab(activeGroup)
     : isAndroidEventGroupTab(activeGroup);
 }
@@ -3825,7 +3854,7 @@ function doesRowMatchEventGroup(
   if (activeGroup === "all") {
     return true;
   }
-  if (platform === "unity") {
+  if (platformUsesSdkEventGroupTabs(platform)) {
     return doesUnityRowMatchEventGroup(row, activeGroup);
   }
   if (!isAndroidEventGroupTab(activeGroup)) {
@@ -3921,7 +3950,7 @@ function doesUnknownResultMatchEventGroup(
   if (activeGroup === "all") {
     return true;
   }
-  if (platform === "unity") {
+  if (platformUsesSdkEventGroupTabs(platform)) {
     if (!isUnityEventGroupTab(activeGroup)) {
       return true;
     }
@@ -4331,6 +4360,28 @@ export default function Home() {
   const [iosLiveFeedLines, setIosLiveFeedLines] = useState<
     { id: string; text: string }[]
   >([]);
+  const [iosLunarConsoleInput, setIosLunarConsoleInput] = useState("");
+  const [iosLunarRawPreviewLines, setIosLunarRawPreviewLines] = useState<
+    string[]
+  >([]);
+  const [iosLunarRawLinesCount, setIosLunarRawLinesCount] = useState(0);
+  const [iosLunarAnalyticsCandidateLinesCount, setIosLunarAnalyticsCandidateLinesCount] =
+    useState(0);
+  const [iosLunarLastRawLine, setIosLunarLastRawLine] = useState<string | null>(
+    null,
+  );
+  const [iosLunarLastExtractedEvent, setIosLunarLastExtractedEvent] = useState<
+    string | null
+  >(null);
+  const [
+    iosLunarLastExtractedAnalyticsType,
+    setIosLunarLastExtractedAnalyticsType,
+  ] = useState<"AppsFlyer" | "AppMetrica" | "ABTest" | null>(null);
+  const [iosLunarImportSource, setIosLunarImportSource] = useState<
+    "paste" | "file" | null
+  >(null);
+  const [isProcessingIosLunarConsole, setIsProcessingIosLunarConsole] =
+    useState(false);
   const [unityLogPath, setUnityLogPath] = useState("");
   const [unityLiveStatus, setUnityLiveStatus] =
     useState<AndroidLiveStatus>("disconnected");
@@ -4486,13 +4537,12 @@ export default function Home() {
   const eventGroupTabsForCurrentPlatform: Array<{
     id: EventGroupTabId;
     label: string;
-  }> =
-    activePlatform === "unity"
-      ? unityEventGroupTabIds.map((id) => ({
-          id,
-          label: labels.unityEventGroupLabels[id],
-        }))
-      : androidEventGroupTabs;
+  }> = platformUsesSdkEventGroupTabs(activePlatform)
+    ? unityEventGroupTabIds.map((id) => ({
+        id,
+        label: labels.unityEventGroupLabels[id],
+      }))
+    : androidEventGroupTabs;
 
   useEffect(() => {
     if (!isEventGroupTabAvailableForPlatform(activeEventGroupTab, activePlatform)) {
@@ -5708,6 +5758,7 @@ export default function Home() {
         matchBundle,
         logText,
         unityManualEventInput,
+        iosLunarConsoleInput,
         processMessage,
         activeSidebarFilter,
         activeEventGroupTab,
@@ -5776,6 +5827,7 @@ export default function Home() {
       sheetSyncError,
       sheetSyncStatus,
       unityManualEventInput,
+      iosLunarConsoleInput,
       unknownLiveResults,
     ]);
 
@@ -5835,6 +5887,7 @@ export default function Home() {
       setMatchBundle(workspace.matchBundle);
       setLogText(workspace.logText);
       setUnityManualEventInput(workspace.unityManualEventInput);
+      setIosLunarConsoleInput(workspace.iosLunarConsoleInput);
       setProcessMessage(workspace.processMessage);
       setActiveSidebarFilter(workspace.activeSidebarFilter);
       setActiveEventGroupTab(workspace.activeEventGroupTab ?? "all");
@@ -7152,6 +7205,12 @@ export default function Home() {
       `unityLastRawLine=${unityLastRawLine ?? "null"}`,
       `unityLastExtractedEvent=${unityLastExtractedEvent ?? "null"}`,
       `unityLastExtractedAnalyticsType=${unityLastExtractedAnalyticsType ?? "null"}`,
+      `iosLunarRawLinesCount=${iosLunarRawLinesCount}`,
+      `iosLunarAnalyticsCandidateLinesCount=${iosLunarAnalyticsCandidateLinesCount}`,
+      `iosLunarLastRawLine=${iosLunarLastRawLine ?? "null"}`,
+      `iosLunarLastExtractedEvent=${iosLunarLastExtractedEvent ?? "null"}`,
+      `iosLunarLastExtractedAnalyticsType=${iosLunarLastExtractedAnalyticsType ?? "null"}`,
+      `iosLunarImportSource=${iosLunarImportSource ?? "null"}`,
       `unityTailMode=${unityTailMode ?? "null"}`,
       `unityLastRawLineAt=${unityLastRawLineAt ?? "null"}`,
       `detectedParser=${detectedParser ?? "null"}`,
@@ -7327,6 +7386,12 @@ export default function Home() {
     unityShowAllLogLines,
     unityAnalyticsCandidateLinesCount,
     unityWatcherStarted,
+    iosLunarRawLinesCount,
+    iosLunarAnalyticsCandidateLinesCount,
+    iosLunarLastRawLine,
+    iosLunarLastExtractedEvent,
+    iosLunarLastExtractedAnalyticsType,
+    iosLunarImportSource,
   ]);
 
   useEffect(() => {
@@ -10442,6 +10507,75 @@ export default function Home() {
     }
   }, [appendLiveAnalyticsLine, labels.noSpecLoaded, unityManualEventInput]);
 
+  const processIosLunarConsoleLines = useCallback(
+    (lines: string[], source: "paste" | "file") => {
+      if (!importResultRef.current?.rows.length) {
+        setIosLiveError(labels.noSpecLoaded);
+        return;
+      }
+
+      setIsProcessingIosLunarConsole(true);
+      try {
+        setIosLiveError(null);
+        setIosLunarImportSource(source);
+
+        for (const rawLine of lines) {
+          const trimmed = rawLine.replace(/\r$/, "").trim();
+          if (!trimmed) {
+            continue;
+          }
+
+          setIosLunarRawLinesCount((count) => count + 1);
+          setIosLunarLastRawLine(trimmed);
+          setIosLunarRawPreviewLines((prev) =>
+            [...prev, trimmed].slice(-100),
+          );
+
+          const parsed = parseIosLunarConsoleLogLine(rawLine);
+          if (parsed === null) {
+            continue;
+          }
+
+          setIosLunarAnalyticsCandidateLinesCount((count) => count + 1);
+          setIosLunarLastExtractedEvent(parsed.extractedEvent);
+          setIosLunarLastExtractedAnalyticsType(parsed.analyticsType);
+
+          appendLiveAnalyticsLine(parsed.analyticsLine, {
+            allowSingleSegmentPayload:
+              parsed.analyticsType === "AppsFlyer" ||
+              parsed.analyticsType === "AppMetrica",
+            analyticsType: parsed.analyticsType,
+            analyticsSource: parsed.analyticsType,
+          });
+        }
+      } finally {
+        setIsProcessingIosLunarConsole(false);
+      }
+    },
+    [appendLiveAnalyticsLine, labels.noSpecLoaded],
+  );
+
+  const handleIosLunarConsoleProcess = useCallback(() => {
+    const lines = iosLunarConsoleInput.split(/\r?\n/);
+    if (lines.every((line) => line.trim() === "")) {
+      return;
+    }
+    processIosLunarConsoleLines(lines, "paste");
+    setIosLunarConsoleInput("");
+  }, [iosLunarConsoleInput, processIosLunarConsoleLines]);
+
+  const handleIosLunarConsoleFileSelect = useCallback(
+    async (file: File) => {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/);
+      if (lines.every((line) => line.trim() === "")) {
+        return;
+      }
+      processIosLunarConsoleLines(lines, "file");
+    },
+    [processIosLunarConsoleLines],
+  );
+
   const handleAndroidConnect = useCallback(async () => {
     const packageNameOverride = androidPackageName.trim();
     if (!packageNameOverride) {
@@ -10837,7 +10971,8 @@ export default function Home() {
           setUnityLastExtractedEvent(extractedEvent);
           setUnityLastExtractedAnalyticsType(analyticsType);
           appendLiveAnalyticsLine(analyticsLine, {
-            allowSingleSegmentPayload: analyticsType === "AppsFlyer",
+            allowSingleSegmentPayload:
+              analyticsType === "AppsFlyer" || analyticsType === "AppMetrica",
             analyticsType,
             analyticsSource: analyticsType,
           });
@@ -11283,16 +11418,15 @@ export default function Home() {
     const statusFiltered = matchBundle.logs.filter((log) =>
       doesLogMatchSidebarFilter(log, activeSidebarFilter),
     );
-    const eventGroupFiltered =
-      activePlatform === "unity"
-        ? statusFiltered.filter((log) =>
-            doesUnityLogMatchEventGroup(
-              log,
-              activeEventGroupTab,
-              matchBundle.rows,
-            ),
-          )
-        : statusFiltered;
+    const eventGroupFiltered = platformUsesSdkEventGroupTabs(activePlatform)
+      ? statusFiltered.filter((log) =>
+          doesUnityLogMatchEventGroup(
+            log,
+            activeEventGroupTab,
+            matchBundle.rows,
+          ),
+        )
+      : statusFiltered;
     return sortLogsNewestFirst(eventGroupFiltered);
   }, [activeEventGroupTab, activePlatform, activeSidebarFilter, matchBundle]);
 
@@ -11560,7 +11694,12 @@ export default function Home() {
 
   const highlightedMatchResultIdSet = new Set(highlightedMatchResultIds);
   const isAndroidMode = activePlatform === "android";
+  const isIosMode = activePlatform === "ios";
   const isUnityMode = activePlatform === "unity";
+  const iosLunarConsoleProcessDisabled =
+    !importResult?.rows.length ||
+    iosLunarConsoleInput.trim().length === 0 ||
+    isProcessingIosLunarConsole;
   const currentModeImportLabels = labels.modeImport[activePlatform];
   const currentModeGoogleLabels = {
     ...labels.google,
@@ -12289,6 +12428,42 @@ export default function Home() {
               }
               onManualEventProcess={
                 isUnityMode ? handleUnityManualEventProcess : undefined
+              }
+              lunarConsoleTitle={
+                isIosMode ? labels.ios.lunarConsoleTitle : undefined
+              }
+              lunarConsoleValue={
+                isIosMode ? iosLunarConsoleInput : undefined
+              }
+              lunarConsolePlaceholder={
+                isIosMode ? labels.ios.lunarConsolePlaceholder : undefined
+              }
+              lunarConsoleProcessLabel={
+                isIosMode ? labels.ios.lunarConsoleProcess : undefined
+              }
+              lunarConsoleProcessDisabled={
+                isIosMode ? iosLunarConsoleProcessDisabled : undefined
+              }
+              onLunarConsoleChange={
+                isIosMode ? setIosLunarConsoleInput : undefined
+              }
+              onLunarConsoleProcess={
+                isIosMode ? handleIosLunarConsoleProcess : undefined
+              }
+              lunarConsoleUploadLabel={
+                isIosMode ? labels.ios.lunarConsoleUpload : undefined
+              }
+              lunarConsoleUploadHint={
+                isIosMode ? labels.ios.lunarConsoleUploadHint : undefined
+              }
+              onLunarConsoleFileSelect={
+                isIosMode ? handleIosLunarConsoleFileSelect : undefined
+              }
+              lunarConsoleRawPreviewLabel={
+                isIosMode ? labels.ios.lunarConsoleRawPreview : undefined
+              }
+              lunarConsoleRawPreviewLines={
+                isIosMode ? iosLunarRawPreviewLines : undefined
               }
               labels={{
                 ...labels.logPanel,

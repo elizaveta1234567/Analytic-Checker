@@ -37,3 +37,13 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# local tools / build artifacts
+/platform-tools/
+*.dmg
+*.zip
+*.7z
+*.log
+
+# local config with secrets
+google-oauth.config.json

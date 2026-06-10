@@ -1,13 +1,15 @@
 import {
-  extractAnalyticsPayload,
   normalizeAnalyticsEventCandidate,
   validateExtractedPayload,
 } from "@/lib/analytics/matcher/parseLogs";
 
 const ANALYTIC_MARKER = "Analytic report:";
-const SAFE_BARE_FUNNEL_PATH_RE = /^funnel\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/i;
-const APPSFLYER_EVENT_RE =
-  /\[AppsFlyerAnalytics\]\s*send\s+AppsFlyer\s+event\s+\[([^\]]+)\]/i;
+const APPSFLYER_ANALYTICS_RE = /AppsFlyerAnalytics/i;
+const APPSFLYER_SEND_EVENT_RE = /send\s+AppsFlyer\s+event\b/i;
+const SQUARE_BRACKET_VALUE_RE = /\[([^\]]+)\]/g;
+const ANALYTICS_CONTROLLER_RE = /AnalyticsController/i;
+const ANALYTICS_CONTROLLER_EVENT_RE =
+  /reported\s+event\s*:\s*([^\s{]+)/i;
 
 export type UnityAnalyticsType = "AppsFlyer" | "AppMetrica" | "ABTest";
 
@@ -45,10 +47,17 @@ function isUnityStackTraceNoise(line: string): boolean {
 function normalizePayload(
   payload: string,
   analyticsType: UnityAnalyticsType,
+  options: { allowSingleSegment?: boolean } = {},
 ): UnityAnalyticsLogLine | null {
   const cleaned = stripTrailingDots(stripUnityMarkup(payload));
   const normalized = normalizeAnalyticsEventCandidate(cleaned).normalized;
-  if (!validateExtractedPayload(normalized).valid) {
+  const payloadCheck = validateExtractedPayload(normalized);
+  const isSingleSegment =
+    normalized.split(".").filter((segment) => segment.trim()).length === 1;
+  if (
+    !payloadCheck.valid &&
+    !(options.allowSingleSegment === true && isSingleSegment)
+  ) {
     return null;
   }
   return {
@@ -56,6 +65,16 @@ function normalizePayload(
     extractedEvent: normalized,
     analyticsType,
   };
+}
+
+function extractLastSquareBracketValue(value: string): string | null {
+  let lastValue: string | null = null;
+  SQUARE_BRACKET_VALUE_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = SQUARE_BRACKET_VALUE_RE.exec(value)) !== null) {
+    lastValue = match[1]?.trim() || null;
+  }
+  return lastValue;
 }
 
 function normalizeAppsFlyerPayload(payload: string): UnityAnalyticsLogLine | null {
@@ -71,6 +90,37 @@ function normalizeAppsFlyerPayload(payload: string): UnityAnalyticsLogLine | nul
   };
 }
 
+function parseAppsFlyerAnalyticsLogLine(
+  line: string,
+): UnityAnalyticsLogLine | null {
+  if (!APPSFLYER_ANALYTICS_RE.test(line)) {
+    return null;
+  }
+  const sendEventMatch = APPSFLYER_SEND_EVENT_RE.exec(line);
+  if (sendEventMatch === null) {
+    return null;
+  }
+  const payload = extractLastSquareBracketValue(
+    line.slice(sendEventMatch.index),
+  );
+  return payload === null ? null : normalizeAppsFlyerPayload(payload);
+}
+
+function parseAnalyticsControllerLogLine(
+  line: string,
+): UnityAnalyticsLogLine | null {
+  if (!ANALYTICS_CONTROLLER_RE.test(line)) {
+    return null;
+  }
+  const eventMatch = ANALYTICS_CONTROLLER_EVENT_RE.exec(line);
+  if (!eventMatch?.[1]) {
+    return null;
+  }
+  return normalizePayload(eventMatch[1], "AppMetrica", {
+    allowSingleSegment: true,
+  });
+}
+
 export function parseUnityAnalyticsLogLine(
   rawLine: string,
 ): UnityAnalyticsLogLine | null {
@@ -79,9 +129,14 @@ export function parseUnityAnalyticsLogLine(
     return null;
   }
 
-  const appsFlyerMatch = APPSFLYER_EVENT_RE.exec(line);
-  if (appsFlyerMatch?.[1]) {
-    return normalizeAppsFlyerPayload(appsFlyerMatch[1]);
+  const appsFlyerLogLine = parseAppsFlyerAnalyticsLogLine(line);
+  if (appsFlyerLogLine !== null) {
+    return appsFlyerLogLine;
+  }
+
+  const analyticsControllerLogLine = parseAnalyticsControllerLogLine(line);
+  if (analyticsControllerLogLine !== null) {
+    return analyticsControllerLogLine;
   }
 
   const markerIndex = line.indexOf(ANALYTIC_MARKER);
@@ -95,20 +150,7 @@ export function parseUnityAnalyticsLogLine(
   if (isUnityStackTraceNoise(line)) {
     return null;
   }
-
-  const barePayload = extractAnalyticsPayload(line);
-  if (barePayload === null) {
-    return null;
-  }
-  const normalizedBarePayload = normalizeAnalyticsEventCandidate(barePayload);
-  if (
-    normalizedBarePayload.format !== "legacy-comma" &&
-    !SAFE_BARE_FUNNEL_PATH_RE.test(barePayload)
-  ) {
-    return null;
-  }
-
-  return normalizePayload(barePayload, "AppMetrica");
+  return null;
 }
 
 export function normalizeUnityLogLine(rawLine: string): string | null {
